@@ -11,46 +11,32 @@ from extract_mail_data import decode_email_body, extract_transaction_data
 import re
 import psycopg2
 from psycopg2 import pool
-from flask import Flask, jsonify
-from flask import render_template
+from flask import Flask, jsonify, render_template, request
 import logging
-import sys
-import pdb
 from email import policy
 from email.parser import BytesParser
 
 # Keywords to skip
 SKIP_CATEGORIES = ["promotions", "dmat", "login","OTP"]
 
-# Set up logging
+# Set up logging (single configuration)
 logging.basicConfig(
-    level=logging.ERROR,  # Change to ERROR if you want less verbosity
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),  # Logs to the console
-        logging.FileHandler("debug.log")  # Logs to a file named debug.log
+        logging.StreamHandler(),
+        logging.FileHandler("debug.log")
     ]
 )
+logger = logging.getLogger(__name__)
 
-# Logging decorator for phases
-
-
+# Flask app setup
 app = Flask(__name__)
 
 # Load credentials from .env file
 load_dotenv()
 EMAIL = os.getenv("YAHOO_EMAIL")
 PASSWORD = os.getenv("YAHOO_APP_PASSWORD")
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s:%(name)s:%(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger(__name__)
 
 # Validate environment variables
 required_env_vars = [EMAIL, PASSWORD, os.getenv("POSTGRES_HOST"), os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASSWORD")]
@@ -83,12 +69,14 @@ def log_phase(phase_name):
     return decorator
 
 def get_sender_from_email(email_id, email_map):
+    """Return sender name from email address using email_map."""
     for sender, addresses in email_map.items():
         if email_id.lower() in [addr.lower() for addr in addresses]:
             return sender
     return "unknown"
 
 def get_category_from_subject(subject, category_map):
+    """Return category from subject using category_map."""
     subject_lower = subject.lower()
     for category, keywords in category_map.items():
         for keyword in keywords:
@@ -97,34 +85,26 @@ def get_category_from_subject(subject, category_map):
     return "others"
 
 def save_email_to_file(subject, body, max_length=2000):
-    """Save email subject and truncated body to a text file."""
+    """Save email subject and truncated body to a text file (for debugging/logging)."""
     truncated_body = body[:max_length] if len(body) > max_length else body
     with open("emails.txt", "a") as f:
         f.write(f"Subject: {subject}\n")
         f.write(f"Body: {truncated_body}\n")
         f.write("-" * 80 + "\n")
-
-    print(f"Saving email: {subject}")
+    logger.info(f"Saving email: {subject}")
 
 def parse_email_content(raw_bytes):
+    """Parse raw email bytes and extract subject, body, and sender email."""
     msg = BytesParser(policy=policy.default).parsebytes(raw_bytes)
-
-    # Extract and decode subject
     subject_raw = msg['Subject'] or ''
     subject, encoding = decode_header(subject_raw)[0]
     if isinstance(subject, bytes):
         subject = subject.decode(encoding or 'utf-8', errors='ignore')
-
-
-    # Extract sender email
     sender = msg['From'] or ''
     sender_email = ''
     if sender:
-        # Parse email address from sender string
         from email.utils import parseaddr
         sender_email = parseaddr(sender)[1]
-
-    # Extract plain text body, fallback to html if needed
     body = ''
     html_body = ''
     if msg.is_multipart():
@@ -141,15 +121,14 @@ def parse_email_content(raw_bytes):
         payload = msg.get_payload(decode=True)
         charset = msg.get_content_charset() or 'utf-8'
         body = payload.decode(charset, errors='ignore')
-
     if not body and html_body:
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_body, "html.parser")
         body = soup.get_text()
-
     return subject.strip(), body.strip(), sender_email.strip()
 
 def is_valid_transaction(data):
+    """Check if transaction data contains all required fields."""
     required_keys = ("transactionid", "amount", "merchant_name", "transactiontype", "category", "date", "card_number")
     if not data:
         return False
@@ -168,88 +147,21 @@ def connect_to_imap(server):
 
 @app.route('/')
 def index():
-    # Inline HTML with formatted <script> and <pre> as requested
-    return '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Email Handler</title>
-</head>
-<body>
-    <script>
-        // Fetch emails from the server and display status
-        function fetchEmails() {
-            fetch('/fetch-emails')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById("result").innerText =
-                        `Inserted: ${data.inserted} emails\\nMessage: ${data.message}\\nStart Date: ${data.start_date}\\nLast Email Timestamp: ${data.last_timestamp}`;
-                })
-                .catch(() => {
-                    document.getElementById("result").innerText = 'Error fetching emails.';
-                });
-        }
-
-        // Clean up emails on the server and display status
-        function cleanupEmails() {
-            fetch('/cleanup-emails')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById("result").innerText =
-                        `Deleted: ${data.deleted} emails\\nMessage: ${data.message}`;
-                })
-                .catch(() => {
-                    document.getElementById("result").innerText = 'Error cleaning up emails.';
-                });
-        }
-
-        // Confirm before deleting a transaction
-        function confirmDelete() {
-            return confirm("Are you sure you want to delete this transaction?");
-        }
-
-        // Toggle sorting for table columns (ascending/descending)
-        let sortAscending = true;
-        function toggleSort(header) {
-            sortAscending = !sortAscending;
-            console.log(`Sorting by ${header} in ${sortAscending ? 'ASC' : 'DESC'} order`);
-            // Add logic here to sort your table data accordingly
-        }
-
-        // Update pagination UI (disable previous/next buttons as needed)
-        function updatePagination(page, totalPages) {
-            let prevButton = document.getElementById("prev-button");
-            let nextButton = document.getElementById("next-button");
-
-            prevButton.disabled = page <= 1;
-            nextButton.disabled = page >= totalPages;
-
-            document.getElementById("page-number").innerText = `Page ${page} of ${totalPages}`;
-        }
-    </script>
-
-    <button onclick="fetchEmails()">Fetch Emails</button>
-    <button onclick="cleanupEmails()">Cleanup Emails</button>
-    <pre id="result"></pre>
-</body>
-</html>
-'''
+    """Render the main index page."""
+    return render_template("index.html")
 
 @app.route('/status', methods=['GET'])
 def status_page():
+    """Show sync status and email DB stats."""
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM bank_emails")
         record_count = cursor.fetchone()[0]
-
         cursor.execute("SELECT MAX(email_date), MIN(email_date) FROM bank_emails")
         max_date, min_date = cursor.fetchone()
-
         cursor.close()
         db_pool.putconn(conn)
-
         return render_template("status.html", count=record_count, newest=max_date, oldest=min_date)
     except Exception as e:
         logger.error(f"Error fetching status: {e}")
@@ -258,6 +170,7 @@ def status_page():
 @app.route('/fetch-emails', methods=['GET'])
 #@log_phase("Phase 2: Fetch Emails")
 def fetch_emails():
+    """Fetch new emails from IMAP and insert valid transactions into the DB."""
     try:
         imap_server = "imap.mail.yahoo.com"
         # Connect to Yahoo's IMAP server
@@ -339,9 +252,10 @@ def fetch_emails():
         logger.error(f"Error fetching emails: {e}")
         return jsonify({"error": "Failed to fetch emails"}), 500
 
-
-@app.route('/cleanup-emails', methods=['GET'])
+@app.route('/cleanup-emails', methods=['POST'])
 def cleanup_emails():
+    """Delete all emails from the DB. (POST for safety)"""
+    # TODO: Add authentication/authorization here for production use
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
@@ -350,17 +264,15 @@ def cleanup_emails():
         conn.commit()
         cursor.close()
         db_pool.putconn(conn)
-
         return jsonify({"deleted": deleted_count, "message": "All emails deleted from DB."})
     except Exception as e:
         logger.error(f"Error cleaning up emails: {e}")
         return jsonify({"error": "Failed to clean up emails"}), 500
 
 # New route: /transactions
-from flask import request
-
 @app.route('/transactions', methods=['GET'])
 def transactions_page():
+    """Show paginated transactions from the last 30 days."""
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
@@ -426,14 +338,12 @@ def transactions_page():
         logger.error(f"Error fetching transactions: {e}")
         return jsonify({"error": "Failed to fetch transactions"}), 500
 
-
-
 # parse_email and all direct parsing logic have been replaced by extract_email_info from maildata_extract.py
-
 
 # Insert transaction to DB with decorator
 #@log_phase("Phase 4: Insert into DB")
 def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
+    """Insert a transaction into the DB, handling Yahoo and other IMAP servers."""
     try:
         if imapserver == "imap.mail.yahoo.com":
             mailid = "dattu2009@yahoo.com"
@@ -467,6 +377,7 @@ def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
         raise
 
 def insert_transaction_if_valid(data, cursor, conn, subject, imapserver):
+    """Insert transaction if all required fields are present."""
     required_keys = ("transactionid", "amount", "merchant_name", "transactiontype", "category", "date", "card_number", "currency")
     if not data or not all(k in data for k in required_keys):
         logger.debug("Incomplete transaction data. Skipping insert.")
@@ -475,7 +386,6 @@ def insert_transaction_if_valid(data, cursor, conn, subject, imapserver):
         insert_transaction_to_db(data, cursor, subject, conn, imapserver)
     except Exception as e:
         logger.error(f"Failed to insert transaction: {e}")
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000,debug=True, use_reloader=False)

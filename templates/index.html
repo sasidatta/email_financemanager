@@ -1,7 +1,57 @@
 <html>
 <head>
     <title>Email Fetcher</title>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Fetch emails from the server and display status
+        function fetchEmails() {
+            fetch('/fetch-emails')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("result").innerText =
+                        `Inserted: ${data.inserted} emails\nMessage: ${data.message}\nStart Date: ${data.start_date}\nLast Email Timestamp: ${data.last_timestamp}`;
+                })
+                .catch(() => {
+                    document.getElementById("result").innerText = 'Error fetching emails.';
+                });
+        }
+
+        // Clean up emails on the server and display status
+        function cleanupEmails() {
+            fetch('/cleanup-emails')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("result").innerText =
+                        `Deleted: ${data.deleted} emails\nMessage: ${data.message}`;
+                })
+                .catch(() => {
+                    document.getElementById("result").innerText = 'Error cleaning up emails.';
+                });
+        }
+
+        // Confirm before deleting a transaction
+        function confirmDelete() {
+            return confirm("Are you sure you want to delete this transaction?");
+        }
+
+        // Toggle sorting for table columns (ascending/descending)
+        let sortAscending = true;
+        function toggleSort(header) {
+            sortAscending = !sortAscending;
+            console.log(`Sorting by ${header} in ${sortAscending ? 'ASC' : 'DESC'} order`);
+            // Add logic here to sort your table data accordingly
+        }
+
+        // Update pagination UI (disable previous/next buttons as needed)
+        function updatePagination(page, totalPages) {
+            let prevButton = document.getElementById("prev-button");
+            let nextButton = document.getElementById("next-button");
+
+            prevButton.disabled = page <= 1;
+            nextButton.disabled = page >= totalPages;
+
+            document.getElementById("page-number").innerText = `Page ${page} of ${totalPages}`;
+        }
+    </script>
 </head>
 <body>
     <h2>Bank Email Fetcher</h2>
@@ -13,6 +63,12 @@
     <div id="console" style="background:#f4f4f4; border:1px solid #ccc; padding:10px; margin-top:20px; height:200px; overflow-y:auto; font-family:monospace;">
         <strong>Console Output:</strong>
         <pre id="console-output"></pre>
+    </div>
+    <!-- Pagination controls (if needed for transactions) -->
+    <div style="margin-top: 20px;">
+        <button id="prev-button" onclick="/* add logic */">Previous</button>
+        <span id="page-number">Page 1 of 1</span>
+        <button id="next-button" onclick="/* add logic */">Next</button>
     </div>
 </body>
 </html>
