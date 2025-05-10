@@ -1,60 +1,127 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="bg-gradient-to-br from-gray-100 to-blue-100 dark:from-gray-900 dark:to-gray-800">
 <head>
     <meta charset="UTF-8">
-    <title>Transaction Handler</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions | Finance Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Manrope', 'sans-serif'] },
+            colors: {
+              cred: '#2e2e2e',
+              credAccent: '#00e6a0',
+              credBg: 'rgba(255,255,255,0.7)',
+              credGlass: 'rgba(255,255,255,0.5)',
+            },
+            boxShadow: {
+              glass: '0 8px 32px 0 rgba(31, 38, 135, 0.15)',
+            },
+          }
+        }
+      }
+    </script>
+    <style>
+      html { font-family: 'Manrope', sans-serif; }
+      .glass {
+        background: rgba(255,255,255,0.7);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        backdrop-filter: blur(8px);
+        border-radius: 1.5rem;
+      }
+      .dark .glass {
+        background: rgba(30,41,59,0.7);
+      }
+      .pill {
+        @apply px-4 py-2 rounded-full font-semibold shadow-sm transition-colors duration-200;
+      }
+      .pill-active {
+        @apply bg-credAccent text-white;
+      }
+      .pill-inactive {
+        @apply bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-credAccent hover:text-white;
+      }
+    </style>
 </head>
-<body>
-    <h1>Email Transaction Management</h1>
-    
-    <!-- Buttons to trigger fetch and cleanup operations -->
-    <form method="get" action="/fetch-emails" style="display:inline;">
-        <button type="submit">Fetch Emails</button>
-    </form>
-    <form method="post" action="/cleanup-emails" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete all emails?');">
-        <button type="submit">Cleanup Emails</button>
-    </form>
-    
-    <!-- Category filter -->
-    <form method="get" action="/transactions" style="display:inline; margin-left:20px;">
-        <label for="category">Filter by Category:</label>
-        <select name="category" id="category" onchange="this.form.submit()">
-            <option value="">All</option>
+<body class="min-h-screen bg-gradient-to-br from-gray-100 to-blue-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
+    <div class="max-w-5xl mx-auto py-8 px-4">
+        <!-- Header -->
+        <div class="flex flex-col sm:flex-row items-center justify-between mb-8 gap-4">
+            <h1 class="text-3xl font-extrabold tracking-tight text-cred dark:text-credAccent">💸 Transactions</h1>
+            <div class="flex items-center gap-4">
+                <button id="toggle-dark" class="rounded-full p-2 bg-gray-200 dark:bg-gray-700 hover:bg-credAccent hover:text-white dark:hover:bg-credAccent transition-colors" title="Toggle dark mode">
+                    <svg id="icon-sun" class="w-6 h-6 block dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.66-12.66l-.71.71M4.05 19.07l-.71.71M21 12h-1M4 12H3m16.66 4.66l-.71-.71M4.05 4.93l-.71-.71M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <svg id="icon-moon" class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>
+                </button>
+                <form method="get" action="/fetch-emails">
+                    <button type="submit" class="pill pill-inactive">Fetch Emails</button>
+                </form>
+                <form method="post" action="/cleanup-emails" onsubmit="return confirm('Are you sure you want to delete all emails?');">
+                    <button type="submit" class="pill pill-inactive">Cleanup Emails</button>
+                </form>
+            </div>
+        </div>
+        <!-- Category Filter -->
+        <div class="mb-6 flex flex-wrap gap-2">
+            <form method="get" action="/transactions" class="flex flex-wrap gap-2">
+                <input type="hidden" name="category" value="">
+                <button type="submit" class="pill {% if not request.args.get('category') %}pill-active{% else %}pill-inactive{% endif %}">All</button>
+            </form>
             {% for cat in categories %}
-                <option value="{{ cat }}" {% if request.args.get('category') == cat %}selected{% endif %}>{{ cat }}</option>
+            <form method="get" action="/transactions" class="flex flex-wrap gap-2">
+                <input type="hidden" name="category" value="{{ cat }}">
+                <button type="submit" class="pill {% if request.args.get('category') == cat %}pill-active{% else %}pill-inactive{% endif %}">{{ cat|capitalize }}</button>
+            </form>
             {% endfor %}
-        </select>
-    </form>
-    
-    <!-- Section to display status messages -->
-    <pre id="result"></pre>
-    
-    <!-- Transactions table -->
-    <table id="transactions-table" border="1" cellpadding="5" cellspacing="0">
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Merchant</th>
-                <th>Transaction Type</th>
-                <th>Category</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% if transactions %}
-                {% for txn in transactions %}
-                <tr>
-                    <td>{{ txn.date }}</td>
-                    <td>{{ txn.amount }}</td>
-                    <td>{{ txn.merchant_name }}</td>
-                    <td>{{ txn.transactiontype }}</td>
-                    <td>{{ txn.category }}</td>
-                </tr>
-                {% endfor %}
-            {% else %}
-                <tr><td colspan="5">No transactions found.</td></tr>
-            {% endif %}
-        </tbody>
-    </table>
+        </div>
+        <!-- Transactions Table Card -->
+        <div class="glass p-6 overflow-x-auto">
+            <table class="min-w-full text-sm text-left">
+                <thead class="sticky top-0 z-10 bg-credGlass dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Date</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Amount</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Merchant</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Transaction Type</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Category</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if transactions %}
+                        {% for txn in transactions %}
+                        <tr class="transition-colors duration-150 hover:bg-credAccent/10 dark:hover:bg-credAccent/20">
+                            <td class="px-4 py-3 whitespace-nowrap">{{ txn.date }}</td>
+                            <td class="px-4 py-3 font-semibold text-green-600 dark:text-green-400">₹{{ txn.amount }}</td>
+                            <td class="px-4 py-3">{{ txn.merchant_name }}</td>
+                            <td class="px-4 py-3">{{ txn.transactiontype }}</td>
+                            <td class="px-4 py-3">
+                                <span class="inline-block px-3 py-1 rounded-full bg-credAccent/20 text-credAccent font-semibold text-xs">{{ txn.category|capitalize }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="5" class="text-center py-8 text-gray-400">No transactions found.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+      // Dark mode toggle
+      const btn = document.getElementById('toggle-dark');
+      btn.addEventListener('click', function() {
+        document.documentElement.classList.toggle('dark');
+        localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+      });
+      // On load, set theme from localStorage
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    </script>
 </body>
 </html>

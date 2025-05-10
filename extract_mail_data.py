@@ -8,9 +8,10 @@ import pdb
 from categories import category_map
 from categories import email_map
 bank_regex_patterns = {
+    # HDFC UPI Credit Card
     "HDFC": {
         "pattern": re.compile(
-            r"Rs\.?([\d,]+\.\d{2}).*?Credit Card\s+(XX\d{4}).*?to\s+([A-Z0-9@\.]+)\s+(.*?)\s+on\s+(\d{2}-\d{2}-\d{2}).*?UPI transaction reference number is\s+(\d+)",
+            r"Rs\\.?([\d,]+\\.\d{2}).*?HDFC Bank RuPay Credit Card\\s+(XX\\d{4}).*?to\\s+([\w@.]+)\\s+(.*?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2}).*?UPI transaction reference number is\\s+(\\d+)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
@@ -24,9 +25,10 @@ bank_regex_patterns = {
         "card": "HDFC Bank RuPay Credit Card",
         "transactiontype": "Credit card UPI"
     },
+    # ICICI Credit Card
     "ICICI": {
         "pattern": re.compile(
-            r"ICICI Bank Credit Card\s+(XX\d{4}).*?transaction of INR\s+([\d,]+\.\d{2}).*?on\s+([A-Za-z]+\s+\d{2},\s+\d{4}).*?Info:\s+(.*?)\.",
+            r"ICICI Bank Credit Card\\s+(XX\\d{4}).*?transaction of INR\\s+([\d,]+\\.\d{2}).*?on\\s+([A-Za-z]+\\s+\\d{2},\\s+\\d{4}).*?Info:\\s+(.*?)\\.",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
@@ -40,7 +42,77 @@ bank_regex_patterns = {
         "card": "ICICI Bank Credit Card",
         "transactiontype": "Credit card"
     },
-
+    # Kotak IMPS Debit
+    "KOTAK_IMPS_DEBIT": {
+        "pattern": re.compile(
+            r"account\\s+(xx\\d+).*?debited for Rs\\.\\s*([\d,]+\\.\d{2}) on (\\d{2}-[A-Za-z]{3}-\\d{4}).*?Beneficiary Name: (.*?) Beneficiary Account No: (.*?) Beneficiary IFSC: (.*?) IMPS Reference No: (\\d+).*?Remarks: (.*?) ",
+            re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "account_number",
+            "amount",
+            "date",
+            "beneficiary_name",
+            "beneficiary_account",
+            "beneficiary_ifsc",
+            "transactionid",
+            "remarks"
+        ],
+        "transactiontype": "IMPS Debit"
+    },
+    # Kotak IMPS Credit
+    "KOTAK_IMPS_CREDIT": {
+        "pattern": re.compile(
+            r"account\\s+(xx\\d+).*?credited by Rs\\.\\s*([\d,]+\\.\d{2}) on (\\d{2}-[A-Za-z]{3}-\\d{4}).*?Sender Name: (.*?) Sender Mobile No: (.*?) IMPS Reference No: (\\d+).*?Remarks : (.*?) ",
+            re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "account_number",
+            "amount",
+            "date",
+            "sender_name",
+            "sender_mobile",
+            "transactionid",
+            "remarks"
+        ],
+        "transactiontype": "IMPS Credit"
+    },
+    # Axis Bank Debit
+    "AXIS_DEBIT": {
+        "pattern": re.compile(
+            r"A/c no. (XX\\d+).*?debited with INR ([\d,]+\\.\d{2}) on (\\d{2}-\\d{2}-\\d{4}) (\\d{2}:\\d{2}:\\d{2}) .*?by (.*?)\\.",
+            re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "account_number",
+            "amount",
+            "date",
+            "time",
+            "reference"
+        ],
+        "transactiontype": "Debit"
+    },
+    # Axis NEFT
+    "AXIS_NEFT": {
+        "pattern": re.compile(
+            r"NEFT for your A/c no. (XX\\d+) for an amount of INR ([\d,]+\\.\d{2}) has been initiated with transaction reference no. (\w+). .*?at (.*?)\\.",
+            re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "account_number",
+            "amount",
+            "transactionid",
+            "merchant_name"
+        ],
+        "transactiontype": "NEFT"
+    },
+    # Generic fallback for INR/Rs. transactions
+    "GENERIC": {
+        "pattern": re.compile(
+            r"(?:INR|Rs\\.?)\\s*([\d,]+\\.\d{2})", re.IGNORECASE),
+        "fields": ["amount"],
+        "transactiontype": "Unknown"
+    },
 }
 
 def decode_email_body(raw_email_bytes):
