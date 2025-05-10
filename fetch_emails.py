@@ -167,8 +167,7 @@ def status_page():
         logger.error(f"Error fetching status: {e}")
         return jsonify({"error": "Failed to fetch status"}), 500
 
-@app.route('/fetch-emails', methods=['GET'])
-#@log_phase("Phase 2: Fetch Emails")
+@app.route('/fetch-emails', methods=['POST'])
 def fetch_emails():
     """Fetch new emails from IMAP and insert valid transactions into the DB."""
     try:
@@ -183,7 +182,7 @@ def fetch_emails():
         cursor.close()
 
         # Calculate the date range for the last 0 days
-        three_days_ago = datetime.now() - timedelta(days=1)
+        three_days_ago = datetime.now() - timedelta(days=130)
         since_date = three_days_ago.strftime("%d-%b-%Y")
     
         # Define banking-related keywords
@@ -200,10 +199,8 @@ def fetch_emails():
             logger.error("Failed to search emails.")
             return jsonify({"error": "Failed to search emails"}), 500
         mail_ids = messages[0].split()
-
         cursor = conn.cursor()
         inserted_count = 0
-
         for mail_id in mail_ids:
             try:
                 status, msg_data = imap.fetch(mail_id, "(RFC822)")
@@ -214,40 +211,29 @@ def fetch_emails():
 
                         # Check if subject matches the banking keywords pattern
                         if not pattern.search(subject):
-                            continue  # Skip the email if it doesn't match the pattern
-
+                            continue
                         if sender in ("demat"):
                             continue
-
                         data = extract_transaction_data(body)
-
-                        # Skip if data is None or incomplete
                         if not is_valid_transaction(data):
                             logger.debug("Skipping insert due to validation failure.")
                             continue
-
                         logger.debug(data)
                         insert_transaction_if_valid(data, cursor, conn, subject, imap_server)
-                        inserted_count += 1  # Increment only after successful insert
+                        inserted_count += 1
             except Exception as e:
                 logger.error(f"Error processing mail id {mail_id}: {e}", exc_info=True)
                 continue
-
         cursor.close()
         db_pool.putconn(conn)
-
-        # Logout from IMAP server
         imap.logout()
-
         logger.info(f"Inserted {inserted_count} new banking-related emails into the database.")
-
         return jsonify({
             "inserted": inserted_count,
             "message": "Done",
             "last_timestamp": last_timestamp,
             "start_date": since_date
         })
-
     except Exception as e:
         logger.error(f"Error fetching emails: {e}")
         return jsonify({"error": "Failed to fetch emails"}), 500
