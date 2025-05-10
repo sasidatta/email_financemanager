@@ -272,46 +272,32 @@ def cleanup_emails():
 # New route: /transactions
 @app.route('/transactions', methods=['GET'])
 def transactions_page():
-    """Show paginated transactions from the last 30 days."""
+    """Show all transactions from the transactions table."""
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
-        thirty_days_ago = datetime.now() - timedelta(days=30)
-
-        # Pagination parameters
-        page = request.args.get('page', 1, type=int)
-        per_page = 10  # Change this to adjust the number of transactions per page
-        offset = (page - 1) * per_page
-
-        # Fetch categories for filtering
+        # Fetch all categories for filtering
         cursor.execute("SELECT DISTINCT category FROM transactions")
         categories = [row[0] for row in cursor.fetchall()]
-
         # Get filter from query string
         category_filter = request.args.get('category', '')
-
-        # Build query based on filter and pagination
+        # Build query based on filter
         if category_filter:
             cursor.execute("""
                 SELECT date, amount, merchant_name, transactiontype, category
                 FROM transactions
-                WHERE date >= %s AND category = %s
+                WHERE category = %s
                 ORDER BY date DESC
-                LIMIT %s OFFSET %s
-            """, (thirty_days_ago, category_filter, per_page, offset))
+            """, (category_filter,))
         else:
             cursor.execute("""
                 SELECT date, amount, merchant_name, transactiontype, category
                 FROM transactions
-                WHERE date >= %s
                 ORDER BY date DESC
-                LIMIT %s OFFSET %s
-            """, (thirty_days_ago, per_page, offset))
+            """)
         transactions = cursor.fetchall()
         cursor.close()
         db_pool.putconn(conn)
-
-        # Format date to MM-DD-YYYY
         formatted_transactions = []
         for txn in transactions:
             formatted_transactions.append({
@@ -321,19 +307,9 @@ def transactions_page():
                 "transactiontype": txn[3],
                 "category": txn[4]
             })
-
-        # Get the total count of transactions for pagination
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM transactions WHERE date >= %s", (thirty_days_ago,))
-        total_transactions = cursor.fetchone()[0]
-        total_pages = (total_transactions + per_page - 1) // per_page  # Calculate the total number of pages
-        cursor.close()
-
         return render_template("transactions.html",
                                transactions=formatted_transactions,
-                               categories=categories,
-                               page=page,
-                               total_pages=total_pages)
+                               categories=categories)
     except Exception as e:
         logger.error(f"Error fetching transactions: {e}")
         return jsonify({"error": "Failed to fetch transactions"}), 500
