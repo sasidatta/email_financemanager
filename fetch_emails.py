@@ -167,7 +167,7 @@ def status_page():
         logger.error(f"Error fetching status: {e}")
         return jsonify({"error": "Failed to fetch status"}), 500
 
-@app.route('/fetch-emails', methods=['POST'])
+@app.route('/fetch-emails', methods=['GET','POST'])
 def fetch_emails():
     """Fetch new emails from IMAP and insert valid transactions into the DB."""
     try:
