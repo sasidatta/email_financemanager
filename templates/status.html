@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Database Sync Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1 {
+            color: #444;
+        }
+        .status-box {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: auto;
+        }
+        .status-item {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-box">
+        <h1>📊 Email DB Status</h1>
+        {% if count is defined %}
+            <div class="status-item"><strong>Total Emails:</strong> {{ count }}</div>
+        {% endif %}
+        {% if newest is defined %}
+            <div class="status-item"><strong>Last Email Timestamp:</strong> {{ newest }}</div>
+        {% endif %}
+        {% if oldest is defined %}
+            <div class="status-item"><strong>Oldest Email Timestamp:</strong> {{ oldest }}</div>
+        {% endif %}
+
+        <h2 style="color: #555; margin-top: 30px;">🔄 Sync Information</h2>
+        {% if last_sync_time is defined %}
+            <div class="status-item"><strong>Last Sync Run:</strong> {{ last_sync_time }}</div>
+        {% endif %}
+        {% if last_sync_status is defined %}
+            <div class="status-item"><strong>Last Sync Status:</strong> {{ last_sync_status }}</div>
+        {% endif %}
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="/" style="
+                display: inline-block;
+                background-color: #007BFF;
+                color: white;
+                padding: 10px 20px;
+                text-decoration: none;
+                border-radius: 5px;
+                font-size: 16px;
+                transition: background-color 0.3s ease;
+            " onmouseover="this.style.backgroundColor='#0056b3'" onmouseout="this.style.backgroundColor='#007BFF'">
+                ⬅️ Back to Home
+            </a>
+        </div>
+    </div>
+</body>
+</html>

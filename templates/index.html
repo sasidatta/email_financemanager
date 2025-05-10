@@ -1,0 +1,18 @@
+<html>
+<head>
+    <title>Email Fetcher</title>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+<body>
+    <h2>Bank Email Fetcher</h2>
+    <button onclick="fetchEmails()">Fetch Emails</button>
+    <button onclick="cleanupEmails()">Cleanup DB</button>
+    <button onclick="location.href='/status'">View Sync Status</button>
+    <button onclick="location.href='/transactions'">View Transactions</button>
+    <p id="result"></p>
+    <div id="console" style="background:#f4f4f4; border:1px solid #ccc; padding:10px; margin-top:20px; height:200px; overflow-y:auto; font-family:monospace;">
+        <strong>Console Output:</strong>
+        <pre id="console-output"></pre>
+    </div>
+</body>
+</html>
