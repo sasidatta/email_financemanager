@@ -260,12 +260,12 @@ def cleanup_emails():
 # New route: /transactions
 @app.route('/transactions', methods=['GET'])
 def transactions_page():
-    """Show all transactions from the transactions table."""
+    """Show all transactions from the debit_transactions table."""
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
         # Fetch all categories for filtering
-        cursor.execute("SELECT DISTINCT category FROM transactions")
+        cursor.execute("SELECT DISTINCT category FROM debit_transactions")
         categories = [row[0] for row in cursor.fetchall()]
         # Get filter from query string
         category_filter = request.args.get('category', '')
@@ -273,14 +273,14 @@ def transactions_page():
         if category_filter:
             cursor.execute("""
                 SELECT date, amount, merchant_name, transactiontype, category
-                FROM transactions
+                FROM debit_transactions
                 WHERE category = %s
                 ORDER BY date DESC
             """, (category_filter,))
         else:
             cursor.execute("""
                 SELECT date, amount, merchant_name, transactiontype, category
-                FROM transactions
+                FROM debit_transactions
                 ORDER BY date DESC
             """)
         transactions = cursor.fetchall()
