@@ -7,113 +7,8 @@ from bs4 import BeautifulSoup
 import pdb
 from categories import category_map
 from categories import email_map
-bank_regex_patterns = {
-    # HDFC UPI Credit Card
-    "HDFC": {
-        "pattern": re.compile(
-            r"Rs\\.?([\d,]+\\.\d{2}).*?HDFC Bank RuPay Credit Card\\s+(XX\\d{4}).*?to\\s+([\w@.]+)\\s+(.*?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2}).*?UPI transaction reference number is\\s+(\\d+)",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "amount",
-            "card_number",
-            "merchant_paymentid",
-            "merchant_name",
-            "date",
-            "transactionid"
-        ],
-        "card": "HDFC Bank RuPay Credit Card",
-        "transactiontype": "Credit card UPI"
-    },
-    # ICICI Credit Card
-    "ICICI": {
-        "pattern": re.compile(
-            r"ICICI Bank Credit Card\\s+(XX\\d{4}).*?transaction of INR\\s+([\d,]+\\.\d{2}).*?on\\s+([A-Za-z]+\\s+\\d{2},\\s+\\d{4}).*?Info:\\s+(.*?)\\.",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "card_number",
-            "amount",
-            "date",
-            "merchant_name"
-        ],
-        "transactionid": "",
-        "merchant_paymentid": "",
-        "card": "ICICI Bank Credit Card",
-        "transactiontype": "Credit card"
-    },
-    # Kotak IMPS Debit
-    "KOTAK_IMPS_DEBIT": {
-        "pattern": re.compile(
-            r"account\\s+(xx\\d+).*?debited for Rs\\.\\s*([\d,]+\\.\d{2}) on (\\d{2}-[A-Za-z]{3}-\\d{4}).*?Beneficiary Name: (.*?) Beneficiary Account No: (.*?) Beneficiary IFSC: (.*?) IMPS Reference No: (\\d+).*?Remarks: (.*?) ",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "account_number",
-            "amount",
-            "date",
-            "beneficiary_name",
-            "beneficiary_account",
-            "beneficiary_ifsc",
-            "transactionid",
-            "remarks"
-        ],
-        "transactiontype": "IMPS Debit"
-    },
-    # Kotak IMPS Credit
-    "KOTAK_IMPS_CREDIT": {
-        "pattern": re.compile(
-            r"account\\s+(xx\\d+).*?credited by Rs\\.\\s*([\d,]+\\.\d{2}) on (\\d{2}-[A-Za-z]{3}-\\d{4}).*?Sender Name: (.*?) Sender Mobile No: (.*?) IMPS Reference No: (\\d+).*?Remarks : (.*?) ",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "account_number",
-            "amount",
-            "date",
-            "sender_name",
-            "sender_mobile",
-            "transactionid",
-            "remarks"
-        ],
-        "transactiontype": "IMPS Credit"
-    },
-    # Axis Bank Debit
-    "AXIS_DEBIT": {
-        "pattern": re.compile(
-            r"A/c no. (XX\\d+).*?debited with INR ([\d,]+\\.\d{2}) on (\\d{2}-\\d{2}-\\d{4}) (\\d{2}:\\d{2}:\\d{2}) .*?by (.*?)\\.",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "account_number",
-            "amount",
-            "date",
-            "time",
-            "reference"
-        ],
-        "transactiontype": "Debit"
-    },
-    # Axis NEFT
-    "AXIS_NEFT": {
-        "pattern": re.compile(
-            r"NEFT for your A/c no. (XX\\d+) for an amount of INR ([\d,]+\\.\d{2}) has been initiated with transaction reference no. (\w+). .*?at (.*?)\\.",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "account_number",
-            "amount",
-            "transactionid",
-            "merchant_name"
-        ],
-        "transactiontype": "NEFT"
-    },
-    # Generic fallback for INR/Rs. transactions
-    "GENERIC": {
-        "pattern": re.compile(
-            r"(?:INR|Rs\\.?)\\s*([\d,]+\\.\d{2})", re.IGNORECASE),
-        "fields": ["amount"],
-        "transactiontype": "Unknown"
-    },
-}
+from cleaner_script import cleanup_html_content
+from patterns import bank_regex_patterns
 
 def decode_email_body(raw_email_bytes):
     # Ensure input is bytes
@@ -121,7 +16,6 @@ def decode_email_body(raw_email_bytes):
         raw_email_bytes = raw_email_bytes.encode('utf-8', errors='replace')
 
     # Parse email using the standard library
-    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
     msg = message_from_bytes(raw_email_bytes, policy=default)
 
     body = None
@@ -142,20 +36,12 @@ def decode_email_body(raw_email_bytes):
                 body = payload.decode(charset, errors="replace")  
             elif content_type == "text/html" and payload:
                 html_body = payload.decode(charset, errors="replace")
+                body = cleanup_html_content(html_body)
     else:
         payload = msg.get_payload(decode=True)
         charset = msg.get_content_charset() or 'utf-8'
         body = payload.decode(charset, errors="replace")
-
-
-    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
-
-
-    if not body and html_body:
-        # Strip HTML tags using BeautifulSoup
-        soup = BeautifulSoup(html_body, "html.parser")
-        body = soup.get_text()
-        verify_html_cleanup(body)
+        body = cleanup_html_content(body)
 
     return body or ""
 
@@ -167,27 +53,50 @@ def clean_email_body(body):
     return cleaned_body
 
 def extract_transaction_data(email_body):
-    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
+    
     email_body = decode_email_body(email_body) 
     email_body = clean_email_body(email_body)
+    
+
+    verify_html_cleanup(email_body)
+    # Define banking-related keywords
+    bank_keywords = [
+       "transaction", "credit card", "credited", "debited", "account", "balance",
+       "payment", "received", "spent", "withdrawn", "ICICI", "SBI", "HDFC",
+       "Axis", "KOTAK", "RBL", "BOB", "IDFC", "YES BANK", "UPI", "NEFT", "IMPS"
+    ]
+    pattern = re.compile(r"|".join(bank_keywords), re.IGNORECASE)
+
+    # If no banking-related keywords are found, skip processing
+    if not pattern.search(email_body):
+        return None
     with open("dump.txt", "a", encoding="utf-8") as dump_file:
         dump_file.write(email_body + "\n" + "="*80 + "\n")
 
-    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
+    
 
     for bank_name, data in bank_regex_patterns.items():
-        if bank_name.lower() in email_body.lower():
             match = data["pattern"].search(email_body)
             if match:
+                #pdb.Pdb(stdout=sys.__stdout__).set_trace()
                 values = match.groups()
                 amount_text = values[data["fields"].index("amount")]
-                currency = "INR" if "INR" in email_body or "Rs" in amount_text else "UNKNOWN"
+                currency = "INR" if "INR" in amount_text or "Rs" in amount_text else "UNKNOWN"
 
                 result = {
                     "currency": currency,
                     "card": data["card"]
                 }
                 result.update(dict(zip(data["fields"], values)))
+                # Reformat date to YYYY-MM-DD if possible
+                if "date" in result:
+                    try:
+                        sep = "/" if "/" in result["date"] else "-"
+                        day, month, year = result["date"].split(sep)
+                        year = "20" + year if len(year) == 2 else year
+                        result["date"] = f"{year}-{month}-{day}"
+                    except Exception:
+                        pass  # Leave original date if parsing fails
                 import logging
                 logging.basicConfig(level=logging.INFO)
                 for key, value in result.items():
@@ -233,14 +142,14 @@ def extract_transaction_data(email_body):
 
                     result["category"] = found_category if found_category else "others"
 
-                #pdb.Pdb(stdout=sys.__stdout__).set_trace()
                 return result
-
     return None
 
 def verify_html_cleanup(cleaned_text):
-    """Check if HTML tags still remain in the cleaned text."""
-    if re.search(r'<[^>]+>', cleaned_text):
+    """Check if HTML tags or major HTML constructs still remain in the cleaned text."""
+    if (
+        re.search(r'<[^>]+>', cleaned_text)
+        or "<html" in cleaned_text.lower()
+        or "<!doctype" in cleaned_text.lower()
+    ):
         print("WARNING: HTML cleanup incomplete - tags still present.")
-    else:
-        print("INFO: HTML cleanup successful - no tags found.")

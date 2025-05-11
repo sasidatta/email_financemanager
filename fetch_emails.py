@@ -15,13 +15,14 @@ from flask import Flask, jsonify, render_template, request
 import logging
 from email import policy
 from email.parser import BytesParser
-
+import pdb
+import sys
 # Keywords to skip
 SKIP_CATEGORIES = ["promotions", "dmat", "login","OTP"]
 
 # Set up logging (single configuration)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
@@ -208,13 +209,14 @@ def fetch_emails():
                     if isinstance(response_part, tuple):
                         subject, body, sender_email = parse_email_content(response_part[1])
                         sender = get_sender_from_email(sender_email, email_map)
-
-                        # Check if subject matches the banking keywords pattern
-                        if not pattern.search(subject):
-                            continue
+                        logger.debug(subject)
                         if sender in ("demat"):
                             continue
+                        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
                         data = extract_transaction_data(body)
+                        if not data:
+                            #logger.debug("No transaction data extracted, skipping.")
+                            continue
                         if not is_valid_transaction(data):
                             logger.debug("Skipping insert due to validation failure.")
                             continue
@@ -307,6 +309,7 @@ def transactions_page():
 def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
     """Insert a transaction into the DB, handling Yahoo and other IMAP servers."""
     try:
+        logger.debug(data)
         if imapserver == "imap.mail.yahoo.com":
             mailid = "dattu2009@yahoo.com"
             cursor.execute(
@@ -333,6 +336,7 @@ def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
                 )
             )
         conn.commit()
+        logger.debug("data inserted")
     except Exception as e:
         logger.error(f"DB Insert Error: {e}")
         logger.debug(f"Failing Data: {data}")
