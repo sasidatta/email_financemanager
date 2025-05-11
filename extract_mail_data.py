@@ -53,11 +53,8 @@ def clean_email_body(body):
     return cleaned_body
 
 def extract_transaction_data(email_body):
-    
     email_body = decode_email_body(email_body) 
     email_body = clean_email_body(email_body)
-    
-
     verify_html_cleanup(email_body)
     # Define banking-related keywords
     bank_keywords = [
@@ -66,83 +63,91 @@ def extract_transaction_data(email_body):
        "Axis", "KOTAK", "RBL", "BOB", "IDFC", "YES BANK", "UPI", "NEFT", "IMPS"
     ]
     pattern = re.compile(r"|".join(bank_keywords), re.IGNORECASE)
-
     # If no banking-related keywords are found, skip processing
     if not pattern.search(email_body):
         return None
     with open("dump.txt", "a", encoding="utf-8") as dump_file:
         dump_file.write(email_body + "\n" + "="*80 + "\n")
-
-    
-
     for bank_name, data in bank_regex_patterns.items():
-            match = data["pattern"].search(email_body)
-            if match:
-                #pdb.Pdb(stdout=sys.__stdout__).set_trace()
-                values = match.groups()
+        match = data["pattern"].search(email_body)
+        if match:
+            values = match.groups()
+            # Try to get amount field for currency
+            amount_text = None
+            if "amount" in data["fields"]:
                 amount_text = values[data["fields"].index("amount")]
-                currency = "INR" if "INR" in amount_text or "Rs" in amount_text else "UNKNOWN"
-
-                result = {
-                    "currency": currency,
-                    "card": data["card"]
-                }
-                result.update(dict(zip(data["fields"], values)))
-                # Reformat date to YYYY-MM-DD if possible
-                if "date" in result:
-                    try:
-                        sep = "/" if "/" in result["date"] else "-"
-                        day, month, year = result["date"].split(sep)
-                        year = "20" + year if len(year) == 2 else year
-                        result["date"] = f"{year}-{month}-{day}"
-                    except Exception:
-                        pass  # Leave original date if parsing fails
-                import logging
-                logging.basicConfig(level=logging.INFO)
-                for key, value in result.items():
-                    logging.info(f"{key}: {value}")
+            currency = "INR" if amount_text and ("INR" in amount_text or "Rs" in amount_text) else "UNKNOWN"
+            result = {"currency": currency}
+            # Add card if present in pattern
+            if "card" in data:
+                result["card"] = data["card"]
+            # Add all regex fields
+            result.update(dict(zip(data["fields"], values)))
+            # Add transactiontype and direction if present
+            if "transactiontype" in data:
+                result["transactiontype"] = data["transactiontype"]
+            if "transaction_direction" in data:
+                result["direction"] = data["transaction_direction"]
+            else:
+                # Fallback: guess from transactiontype
+                ttype = result.get("transactiontype", "").lower()
+                if "credit" in ttype:
+                    result["direction"] = "credit"
+                else:
+                    result["direction"] = "debit"
+            # Reformat date to YYYY-MM-DD if possible
+            if "date" in result:
+                try:
+                    sep = "/" if "/" in result["date"] else "-"
+                    parts = result["date"].split(sep)
+                    if len(parts) == 3:
+                        if len(parts[2]) == 2:
+                            year = "20" + parts[2]
+                        else:
+                            year = parts[2]
+                        # Try to detect if format is DD-MM-YYYY or YYYY-MM-DD
+                        if int(parts[0]) > 31:  # year first
+                            result["date"] = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                        else:
+                            result["date"] = f"{year}-{parts[1]}-{parts[0]}"
+                except Exception:
+                    pass  # Leave original date if parsing fails
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            for key, value in result.items():
+                logging.info(f"{key}: {value}")
+            if "amount" in result:
                 result["amount"] = float(result["amount"].replace(",", ""))
-                
-                # Generate a transaction ID if not already present
-                if "transactionid" not in result or not result["transactionid"]:
-                    result["transactionid"] = f"{result.get('card_number', '')}_{result.get('amount', '')}_{result.get('date', '')}"
-
-                # Add transactiontype if missing
-                if "transactiontype" not in result or not result["transactiontype"]:
-                    if "credit" in result.get("card", "").lower():
-                        result["transactiontype"] = "credit card"
-                    elif "debit" in result.get("card", "").lower():
-                        result["transactiontype"] = "debit card"
-                    else:
-                        result["transactiontype"] = "unknown"
-
-                # Set category based on merchant_name or other rules
-                if "category" not in result:
-                    # Set category based on merchant_name or other rules
-                    merchant = result.get("merchant_name", "").lower()
-                    subject_keywords = email_body.lower()
-
-                    found_category = None
-
-                    # First try email_map based on subject content
-                    for category, senders in email_map.items():
-                        for sender in senders:
-                            if sender.lower() in subject_keywords:
-                                found_category = category
-                                break
-                        if found_category:
+            # Generate a transaction ID if not already present
+            if "transactionid" not in result or not result["transactionid"]:
+                result["transactionid"] = f"{result.get('card_number', '')}_{result.get('amount', '')}_{result.get('date', '')}"
+            # Add transactiontype if missing
+            if "transactiontype" not in result or not result["transactiontype"]:
+                if "credit" in result.get("card", "").lower():
+                    result["transactiontype"] = "credit card"
+                elif "debit" in result.get("card", "").lower():
+                    result["transactiontype"] = "debit card"
+                else:
+                    result["transactiontype"] = "unknown"
+            # Set category based on merchant_name or other rules
+            if "category" not in result:
+                merchant = result.get("merchant_name", "").lower()
+                subject_keywords = email_body.lower()
+                found_category = None
+                for category, senders in email_map.items():
+                    for sender in senders:
+                        if sender.lower() in subject_keywords:
+                            found_category = category
                             break
-
-                    # If not found, try category_map using merchant name
-                    if not found_category:
-                        for keyword, cat in category_map.items():
-                            if keyword.lower() in merchant:
-                                found_category = cat
-                                break
-
-                    result["category"] = found_category if found_category else "others"
-
-                return result
+                    if found_category:
+                        break
+                if not found_category:
+                    for keyword, cat in category_map.items():
+                        if keyword.lower() in merchant:
+                            found_category = cat
+                            break
+                result["category"] = found_category if found_category else "others"
+            return result
     return None
 
 def verify_html_cleanup(cleaned_text):

@@ -307,32 +307,48 @@ def transactions_page():
 # Insert transaction to DB with decorator
 #@log_phase("Phase 4: Insert into DB")
 def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
-    """Insert a transaction into the DB, handling Yahoo and other IMAP servers."""
+    """Insert a transaction into the correct table (debit or credit) based on direction."""
     try:
         logger.debug(data)
-        if imapserver == "imap.mail.yahoo.com":
-            mailid = "dattu2009@yahoo.com"
+        direction = data.get("direction", "debit")
+        if direction == "credit":
+            # Insert into credit_transactions
             cursor.execute(
-                """INSERT INTO transactions (email_address, transactionid, amount, merchant_name, transactiontype, category, date, card_number, merchant_paymentid, currency)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO credit_transactions (
+                        email_address, transactionid, amount, sender_name, transactiontype, category, date, account_number, remarks, currency
+                   ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (transactionid) DO NOTHING""",
                 (
-                    mailid, data['transactionid'], data['amount'], data['merchant_name'],
-                    data['transactiontype'], data['category'], data['date'],
-                    data['card_number'], data.get('merchant_paymentid', ''), data['currency']
+                    data.get('email_address', ''),
+                    data['transactionid'],
+                    data['amount'],
+                    data.get('sender_name', ''),
+                    data.get('transactiontype', ''),
+                    data.get('category', ''),
+                    data.get('date', None),
+                    data.get('account_number', ''),
+                    data.get('remarks', ''),
+                    data.get('currency', 'INR')
                 )
             )
         else:
+            # Insert into debit_transactions
             cursor.execute(
-                """INSERT INTO transactions (email_id, transactionid, amount, merchant_name, transactiontype, category, date, card_number, merchant_paymentid, currency)
-                   SELECT id, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                   FROM bank_emails
-                   WHERE subject = %s
+                """INSERT INTO debit_transactions (
+                        email_address, transactionid, amount, merchant_name, transactiontype, category, date, card_number, merchant_paymentid, currency
+                   ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (transactionid) DO NOTHING""",
                 (
-                    data['transactionid'], data['amount'], data['merchant_name'],
-                    data['transactiontype'], data['category'], data['date'],
-                    data['card_number'], data.get('merchant_paymentid', ''), data['currency'], subject
+                    data.get('email_address', ''),
+                    data['transactionid'],
+                    data['amount'],
+                    data.get('merchant_name', ''),
+                    data.get('transactiontype', ''),
+                    data.get('category', ''),
+                    data.get('date', None),
+                    data.get('card_number', ''),
+                    data.get('merchant_paymentid', ''),
+                    data.get('currency', 'INR')
                 )
             )
         conn.commit()
@@ -344,8 +360,8 @@ def insert_transaction_to_db(data, cursor, subject, conn, imapserver):
 
 def insert_transaction_if_valid(data, cursor, conn, subject, imapserver):
     """Insert transaction if all required fields are present."""
-    required_keys = ("transactionid", "amount", "merchant_name", "transactiontype", "category", "date", "card_number", "currency")
-    if not data or not all(k in data for k in required_keys):
+    # Accept both credit and debit schemas
+    if not data or not data.get('transactionid') or not data.get('amount'):
         logger.debug("Incomplete transaction data. Skipping insert.")
         return
     try:
