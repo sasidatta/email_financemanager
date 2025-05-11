@@ -183,7 +183,7 @@ def fetch_emails():
         cursor.close()
 
         # Calculate the date range for the last 0 days
-        three_days_ago = datetime.now() - timedelta(days=130)
+        three_days_ago = datetime.now() - timedelta(days=13)
         since_date = three_days_ago.strftime("%d-%b-%Y")
     
         # Define banking-related keywords
