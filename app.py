@@ -12,22 +12,13 @@ import re
 import os
 from dotenv import load_dotenv
 
-# Optional: CORS and Swagger UI
-try:
-    from flask_cors import CORS
-    from flask_swagger_ui import get_swaggerui_blueprint
-    HAS_SWAGGER = True
-except ImportError:
-    HAS_SWAGGER = False
+# Optional: CORS and Swagger UI (disabled by default)
+HAS_SWAGGER = False  # Set to True and install flask-swagger-ui/flask-cors if you want API docs/CORS
 
 config = Config()
 app_conf = config.app
 
 app = Flask(__name__)
-
-# CORS support
-if HAS_SWAGGER:
-    CORS(app)
 
 # Logging with rotation
 if not os.path.exists('logs'):
@@ -57,11 +48,12 @@ DB_NAME = get_config_value("POSTGRES_DB", config.database.get("dbname"))
 DB_USER = get_config_value("POSTGRES_USER", config.database.get("user"))
 DB_PASS = get_config_value("POSTGRES_PASSWORD", config.database.get("password"))
 
-if HAS_SWAGGER:
-    SWAGGER_URL = '/api/docs'
-    API_URL = '/static/swagger.yaml'  # You should create this file for full docs
-    swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={{'app_name': "Email Finance Manager"}})
-    app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+# Swagger UI setup (disabled)
+# if HAS_SWAGGER:
+#     SWAGGER_URL = '/api/docs'
+#     API_URL = '/static/swagger.yaml'  # You should create this file for full docs
+#     swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={{'app_name': "Email Finance Manager"}})
+#     app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
 @app.route('/')
 def index():
