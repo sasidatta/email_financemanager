@@ -102,7 +102,7 @@ bank_regex_patterns = {
         "transactiontype": "IMPS Credit"
     },
     # Axis Bank Debit
-    "AXIS_DEBIT": {
+    "AXIS_SAVINGS_DEBIT": {
         "pattern": re.compile(
             r"A/c no\. (XX\d+).*?debited with INR ([\d,]+\.\d{2}) on (\d{2}-\d{2}-\d{4}) (\d{2}:\d{2}:\d{2}) IST by (.*?)\.",
             re.IGNORECASE | re.DOTALL
@@ -132,7 +132,7 @@ bank_regex_patterns = {
     # AXIS Bank UPI Debit
     "AXIS_UPI_DEBIT": {
         "pattern": re.compile(
-            r"(INR)\s*([\d,]+\.\d{2})\s+Account Number:\s+(XX\d{4})\s+Date & Time:\s+(\d{2}-\d{2}-\d{2}),\s+(\d{2}:\d{2}:\d{2})\s+Transaction Info:\s+(UPI/P2A/\d+/.+?)\s+If this transaction was not initiated by you:",
+            r"Amount Debited:\s+(INR|Rs|₹)\s*([\d,]+\.\d{2})\s+Account Number:\s+(XX\d{4})\s+Date & Time:\s+(\d{2}-\d{2}-\d{2}),\s+(\d{2}:\d{2}:\d{2})\s+IST\s+Transaction Info:\s+(UPI/P2A/\d+/.+?)\s+If this transaction was not initiated by you:",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
@@ -201,7 +201,7 @@ bank_regex_patterns = {
     # RBL Bank Credit Card
     "RBL_CREDIT_CARD": {
         "pattern": re.compile(
-            r"(INR)\s*([\d,]+\.\d{2})\s+spent at\s+(.*?)\s+on\s+(\d{2}-\d{2}-\d{4})\s+.*?RBL Bank credit card\s+\((\d{4})\)",
+            r"(INR|Rs|₹)\.?\s*([\d,]+\.\d{2})\s+spent at\s+(.*?)\s+on\s+(\d{2}-\d{2}-\d{4})\s+.*?RBL Bank credit card\s+\((\d{4})\)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
