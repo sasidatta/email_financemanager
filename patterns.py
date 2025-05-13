@@ -220,24 +220,39 @@ def select_best_pattern(email_body):
             return name, match
     return None, None
 
-def normalize_debit_transaction(data):
-    """Normalize debit transaction data (stub for extensibility)."""
-    normalized = {
-        "email_address": data.get("email_address", ""),
-        "transactionid": data.get("transactionid", ""),
-        "amount": data.get("amount", 0.0),
-        "merchant_name": (
-            data.get("merchant_name") or
-            data.get("beneficiary_name") or
-            data.get("reference") or
-            data.get("remarks") or
-            ""
-        ),
-        "transactiontype": data.get("transactiontype", ""),
-        "category": data.get("category", ""),
-        "date": data.get("date", None),
-        "card_number": data.get("card_number", ""),
-        "merchant_paymentid": data.get("merchant_paymentid", ""),
-        "currency": data.get("currency", "INR"),
-    }
+REQUIRED_FIELDS = [
+    "email_address",
+    "transactionid",
+    "amount",
+    "merchant_name",
+    "transactiontype",   # 'credit' or 'debit', also used as direction
+    "payment_type",      # e.g., 'HDFC Bank RuPay Credit Card', 'IMPS', 'NEFT'
+    "category",
+    "date",
+    "account_number",
+    "merchant_paymentid",
+    "currency",
+    "remarks"
+]
+
+def normalize_transaction(data):
+    """Ensure all required fields are present and normalized."""
+    normalized = {}
+    for field in REQUIRED_FIELDS:
+        normalized[field] = data.get(field, "")
+    # Normalize transactiontype (direction)
+    ttype = normalized["transactiontype"].lower()
+    if "credit" in ttype:
+        normalized["transactiontype"] = "credit"
+    elif "debit" in ttype:
+        normalized["transactiontype"] = "debit"
+    else:
+        # Fallback: use keywords in payment_type/merchant_name/remarks
+        pt = normalized["payment_type"].lower()
+        if "credit" in pt:
+            normalized["transactiontype"] = "credit"
+        elif "debit" in pt:
+            normalized["transactiontype"] = "debit"
+        else:
+            normalized["transactiontype"] = ""
     return normalized

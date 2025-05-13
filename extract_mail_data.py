@@ -108,6 +108,10 @@ def extract_transaction_data(email_body: str) -> dict:
             data["direction"] = "debit"
         elif data["transactiontype"].lower().startswith("credit"):
             data["direction"] = "credit"
+    # Post-process currency: set to 'INR' if any INR/Rs/₹ present
+    currency_candidates = [str(data.get('currency', '')), email_body]
+    if any(x in c for c in currency_candidates for x in ['INR', 'Rs', '₹']):
+        data['currency'] = 'INR'
     return data
 
 def clean_email_body(body):
