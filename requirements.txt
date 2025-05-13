@@ -6,3 +6,8 @@ PyYAML
 flask-cors
 flask-swagger-ui
 python-dateutil
+pytest
+requests
+beautifulsoup4
+# For production WSGI server (optional)
+gunicorn
