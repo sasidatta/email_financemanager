@@ -10,6 +10,7 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 import re
 import os
+from dotenv import load_dotenv
 
 # Optional: CORS and Swagger UI
 try:
@@ -36,6 +37,25 @@ file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(messag
 file_handler.setLevel(logging.INFO)
 app.logger.addHandler(file_handler)
 logger = app.logger
+
+# Load .env if present (for local overrides)
+load_dotenv()
+
+def get_config_value(key, default=None):
+    """Get config value from environment or config.yaml (env takes precedence)."""
+    return os.environ.get(key, default)
+
+# Email/IMAP config
+EMAIL = get_config_value("YAHOO_EMAIL", config.email.get("address"))
+PASSWORD = get_config_value("YAHOO_APP_PASSWORD", config.email.get("password"))
+IMAP_SERVER = get_config_value("IMAP_SERVER", config.email.get("imap_server"))
+
+# DB config (if needed elsewhere)
+DB_HOST = get_config_value("POSTGRES_HOST", config.database.get("host"))
+DB_PORT = get_config_value("POSTGRES_PORT", config.database.get("port"))
+DB_NAME = get_config_value("POSTGRES_DB", config.database.get("dbname"))
+DB_USER = get_config_value("POSTGRES_USER", config.database.get("user"))
+DB_PASS = get_config_value("POSTGRES_PASSWORD", config.database.get("password"))
 
 if HAS_SWAGGER:
     SWAGGER_URL = '/api/docs'
@@ -79,7 +99,7 @@ def status_page():
 @app.route('/fetch-emails', methods=['GET','POST'])
 def fetch_emails():
     """Fetch new emails from IMAP and insert valid transactions into the DB."""
-    imap_server = config.email.get('imap_server')
+    imap_server = IMAP_SERVER
     imap = None
     conn = get_conn()
     try:
