@@ -215,3 +215,25 @@ bank_regex_patterns = {
         "transactiontype": "Credit card"
     }
 }
+
+def normalize_debit_transaction(data):
+    # Map all possible fields to your canonical schema
+    normalized = {
+        "email_address": data.get("email_address", ""),
+        "transactionid": data.get("transactionid", ""),
+        "amount": data.get("amount", 0.0),
+        "merchant_name": (
+            data.get("merchant_name") or
+            data.get("beneficiary_name") or
+            data.get("reference") or
+            data.get("remarks") or
+            ""
+        ),
+        "transactiontype": data.get("transactiontype", ""),
+        "category": data.get("category", ""),
+        "date": data.get("date", None),
+        "card_number": data.get("card_number", ""),
+        "merchant_paymentid": data.get("merchant_paymentid", ""),
+        "currency": data.get("currency", "INR"),
+    }
+    return normalized

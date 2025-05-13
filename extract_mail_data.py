@@ -8,7 +8,7 @@ import pdb
 from categories import category_map
 from categories import email_map
 from cleaner_script import cleanup_html_content
-from patterns import bank_regex_patterns
+from patterns import bank_regex_patterns, normalize_debit_transaction
 
 def decode_email_body(raw_email_bytes):
     # Ensure input is bytes
@@ -147,6 +147,9 @@ def extract_transaction_data(email_body):
                             found_category = cat
                             break
                 result["category"] = found_category if found_category else "others"
+            # Normalize debit transactions
+            if result.get("direction") == "debit":
+                result = normalize_debit_transaction(result)
             return result
     return None
 
