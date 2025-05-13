@@ -1,3 +1,7 @@
+"""
+Regex patterns for extracting transaction data from various bank email formats.
+"""
+
 import re
 
 bank_regex_patterns = {
@@ -51,16 +55,18 @@ bank_regex_patterns = {
         "card": "HDFC Bank RuPay Credit Card",
         "transactiontype": "Credit card"
     },
-    # ICICI Credit Card
+    # ICICI Credit Card (matches date with or without time, flexible merchant info)
     "ICICI": {
         "pattern": re.compile(
-            r"ICICI Bank Credit Card\s+(XX\d{4}).*?transaction of INR\s+([\d,]+\.\d{2}).*?on\s+([A-Za-z]+\s+\d{02},\s+\d{4}).*?Info:\s+(.*?)\.",
+            r"ICICI Bank Credit Card\s+(XX\d{4}).*?transaction of (INR|Rs\.?|₹)\s*([\d,]+\.\d{2}).*?on\s+([A-Za-z]+\s+\d{2},\s+\d{4})(?: at ([\d:]+))?.*?Info:\s*([^.\n]+)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
             "card_number",
+            "currency",
             "amount",
             "date",
+            "time",
             "merchant_name"
         ],
         "transactionid": "",
@@ -68,13 +74,14 @@ bank_regex_patterns = {
         "card": "ICICI Bank Credit Card",
         "transactiontype": "Credit card"
     },
-    # Kotak IMPS Debit
+    # Kotak IMPS Debit (accepts both 09-May-2025 and 09-05-2025)
     "KOTAK_IMPS_DEBIT": {
         "pattern": re.compile(
-            r"your account\s+xx\d+\s+is debited for Rs\.?\s*([\d,]+\.\d{2}) on (\d{2}-[A-Za-z]{3}-\d{4}).*?Beneficiary Name:\s+(.*?)\s+Beneficiary Account No:\s+(.*?)\s+Beneficiary IFSC:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks:\s+(.*?) ",
+            r"account\s+xx\d+\s+is debited for (INR|Rs\.?|₹)\s*([\d,]+\.\d{2}) on (\d{2}-[A-Za-z]{3}-\d{4}|\d{2}-\d{2}-\d{4}).*?Beneficiary Name:\s+(.*?)\s+Beneficiary Account No:\s+(.*?)\s+Beneficiary IFSC:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks: ?(.*?) ",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
+            "currency",
             "amount",
             "date",
             "beneficiary_name",
@@ -88,10 +95,11 @@ bank_regex_patterns = {
     # Kotak IMPS Credit
     "KOTAK_IMPS_CREDIT": {
         "pattern": re.compile(
-            r"your account\s+xx\d+\s+is credited by Rs\.?\s*([\d,]+\.\d{2}) on (\d{2}-[A-Za-z]{3}-\d{4}).*?Sender Name:\s+(.*?)\s+Sender Mobile No:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks\s+:\s+(.*?) ",
+            r"account\s+xx\d+\s+is credited by (INR|Rs\.?|₹)\s*([\d,]+\.\d{2}) on (\d{2}-[A-Za-z]{3}-\d{4}|\d{2}-\d{2}-\d{4}).*?Sender Name:\s+(.*?)\s+Sender Mobile No:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks ?:(.*?) ",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
+            "currency",
             "amount",
             "date",
             "sender_name",
@@ -101,29 +109,31 @@ bank_regex_patterns = {
         ],
         "transactiontype": "IMPS Credit"
     },
-    # Axis Bank Debit
-    "AXIS_SAVINGS_DEBIT": {
+    # Axis Bank EMI Debit
+    "AXIS_EMI_DEBIT": {
         "pattern": re.compile(
-            r"A/c no\. (XX\d+).*?debited with INR ([\d,]+\.\d{2}) on (\d{2}-\d{2}-\d{4}) (\d{2}:\d{2}:\d{2}) IST by (.*?)\.",
+            r"A/c no\. (XX\d+).*?debited with (INR|Rs\.?|₹) ([\d,]+\.\d{2}) on (\d{2}-\d{2}-\d{4}) (\d{2}:\d{2}:\d{2}) IST by ([\w\d_\-]+)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
             "account_number",
+            "currency",
             "amount",
             "date",
             "time",
             "reference"
         ],
-        "transactiontype": "Debit"
+        "transactiontype": "EMI Debit"
     },
     # Axis NEFT
     "AXIS_NEFT": {
         "pattern": re.compile(
-            r"NEFT for your A/c no\. (XX\d+) for an amount of INR ([\d,]+\.\d{2}) has been initiated with transaction reference no\. (\w+)\.",
+            r"NEFT for your A/c no\. (XX\d+) for an amount of (INR|Rs\.?|₹) ([\d,]+\.\d{2}) has been initiated with transaction reference no\. (\w+)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
             "account_number",
+            "currency",
             "amount",
             "transactionid"
         ],
@@ -146,10 +156,10 @@ bank_regex_patterns = {
         "card": "AXIS Bank UPI",
         "transactiontype": "UPI Debit"
     },
-    # Generic fallback for INR/Rs. transactions
+    # Generic fallback for INR/Rs/₹ transactions
     "GENERIC": {
         "pattern": re.compile(
-            r"(?:INR|Rs\\.?)\\s*([\d,]+\\.\d{2})", re.IGNORECASE),
+            r"(?:INR|Rs\\.?|₹)\\s*([\d,]+\\.\d{2})", re.IGNORECASE),
         "fields": ["amount"],
         "transactiontype": "Unknown"
     },
@@ -184,20 +194,6 @@ bank_regex_patterns = {
         ],
         "transactiontype": "Card Payment"
     },
-    "AXIS_EMI_DEBIT": {
-        "pattern": re.compile(
-            r"A/c no\. (XX\d+).*?debited with INR ([\d,]+\.\d{2}) on (\d{2}-\d{2}-\d{4}) (\d{2}:\d{2}:\d{2}) IST by ([\w\d_]+)",
-            re.IGNORECASE | re.DOTALL
-        ),
-        "fields": [
-            "account_number",
-            "amount",
-            "date",
-            "time",
-            "reference"
-        ],
-        "transactiontype": "EMI Debit"
-    },
     # RBL Bank Credit Card
     "RBL_CREDIT_CARD": {
         "pattern": re.compile(
@@ -216,8 +212,16 @@ bank_regex_patterns = {
     }
 }
 
+def select_best_pattern(email_body):
+    """Return the best matching pattern and match object for a given email body."""
+    for name, data in bank_regex_patterns.items():
+        match = data["pattern"].search(email_body)
+        if match:
+            return name, match
+    return None, None
+
 def normalize_debit_transaction(data):
-    # Map all possible fields to your canonical schema
+    """Normalize debit transaction data (stub for extensibility)."""
     normalized = {
         "email_address": data.get("email_address", ""),
         "transactionid": data.get("transactionid", ""),

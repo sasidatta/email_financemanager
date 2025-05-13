@@ -1,4 +1,3 @@
-import base64
 import re
 from email import message_from_bytes
 from email.policy import default
@@ -7,10 +6,14 @@ from bs4 import BeautifulSoup
 import pdb
 from categories import category_map
 from categories import email_map
-from cleaner_script import cleanup_html_content
-from patterns import bank_regex_patterns, normalize_debit_transaction
+from cleaner_script import cleanup_html_content, verify_html_cleanup
+from patterns import bank_regex_patterns, normalize_debit_transaction, select_best_pattern
+import logging
+
+logger = logging.getLogger(__name__)
 
 def decode_email_body(raw_email_bytes):
+    """Decode the body of an email from raw bytes, handling HTML and plain text."""
     # Ensure input is bytes
     if isinstance(raw_email_bytes, str):
         raw_email_bytes = raw_email_bytes.encode('utf-8', errors='replace')
@@ -45,113 +48,75 @@ def decode_email_body(raw_email_bytes):
 
     return body or ""
 
+def is_transaction_email(email_body: str) -> bool:
+    """Return True if the email body looks like a transaction, False otherwise."""
+    keywords = [
+        "transaction", "debited", "credited", "payment", "spent", "withdrawn", "IMPS", "NEFT", "UPI", "Credit Card", "debit card", "amount", "Rs.", "INR", "₹"
+    ]
+    return any(kw.lower() in email_body.lower() for kw in keywords)
+
+def extract_transaction_data(email_body: str) -> dict:
+    """Extract transaction data from an email body using the best matching pattern."""
+    # Filter out non-transactional emails
+    if not is_transaction_email(email_body):
+        logger.info("Email skipped as non-transactional.")
+        return None
+    # Try all patterns and select the best match
+    pattern_name, match = select_best_pattern(email_body)
+    if not match:
+        logger.warning("No pattern matched for email body. Logging for review.")
+        with open("unmatched_emails.txt", "a", encoding="utf-8") as f:
+            f.write(email_body + "\n" + "="*80 + "\n")
+        return None
+    data = {}
+    fields = bank_regex_patterns[pattern_name]["fields"]
+    for idx, field in enumerate(fields):
+        try:
+            data[field] = match.group(idx + 1)
+        except Exception:
+            data[field] = ""
+    # Add static fields from pattern definition
+    for k, v in bank_regex_patterns[pattern_name].items():
+        if k not in ("pattern", "fields"):
+            data[k] = v
+    # Post-process amount
+    if "amount" in data:
+        try:
+            data["amount"] = float(str(data["amount"]).replace(",", ""))
+        except Exception:
+            pass
+    # Post-process date (normalize to YYYY-MM-DD if possible)
+    if "date" in data:
+        try:
+            # Try to parse various date formats
+            import dateutil.parser
+            dt = dateutil.parser.parse(data["date"], dayfirst=True, fuzzy=True)
+            data["date"] = dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    # Post-process transactiontype based on keywords if not set or unknown
+    txn_type = data.get("transactiontype", "").lower()
+    body_lower = email_body.lower()
+    if txn_type in ("", "unknown"):
+        if "spent" in body_lower or "debited" in body_lower:
+            data["transactiontype"] = "debit"
+        elif "credited" in body_lower:
+            data["transactiontype"] = "credit"
+    # Optionally, set direction as well
+    if "transactiontype" in data:
+        if data["transactiontype"].lower().startswith("debit"):
+            data["direction"] = "debit"
+        elif data["transactiontype"].lower().startswith("credit"):
+            data["direction"] = "credit"
+    return data
+
 def clean_email_body(body):
+    """Clean up email body text (stub for extensibility)."""
     if isinstance(body, bytes):
         body = body.decode("utf-8", errors="replace")
     cleaned_body = body.strip()  # Removes leading and trailing spaces/newlines
     cleaned_body = re.sub(r'\s+', ' ', cleaned_body)  # Replace multiple spaces or newlines with a single space
     return cleaned_body
-
-def extract_transaction_data(email_body):
-    email_body = decode_email_body(email_body) 
-    email_body = clean_email_body(email_body)
-    verify_html_cleanup(email_body)
-    # Define banking-related keywords
-    bank_keywords = [
-       "transaction", "credit card", "credited", "debited", "account", "balance",
-       "payment", "received", "spent", "withdrawn", "ICICI", "SBI", "HDFC",
-       "Axis", "KOTAK", "RBL", "BOB", "IDFC", "YES BANK", "UPI", "NEFT", "IMPS"
-    ]
-    pattern = re.compile(r"|".join(bank_keywords), re.IGNORECASE)
-    # If no banking-related keywords are found, skip processing
-    if not pattern.search(email_body):
-        return None
-    with open("dump.txt", "a", encoding="utf-8") as dump_file:
-        dump_file.write(email_body + "\n" + "="*80 + "\n")
-    for bank_name, data in bank_regex_patterns.items():
-        match = data["pattern"].search(email_body)
-        if match:
-            values = match.groups()
-            # Try to get amount field for currency
-            amount_text = None
-            if "amount" in data["fields"]:
-                amount_text = values[data["fields"].index("amount")]
-            currency = "INR" if amount_text and ("INR" in amount_text or "Rs" in amount_text) else "UNKNOWN"
-            result = {"currency": currency}
-            # Add card if present in pattern
-            if "card" in data:
-                result["card"] = data["card"]
-            # Add all regex fields
-            result.update(dict(zip(data["fields"], values)))
-            # Add transactiontype and direction if present
-            if "transactiontype" in data:
-                result["transactiontype"] = data["transactiontype"]
-            if "transaction_direction" in data:
-                result["direction"] = data["transaction_direction"]
-            else:
-                # Fallback: guess from transactiontype
-                ttype = result.get("transactiontype", "").lower()
-                if "credit" in ttype:
-                    result["direction"] = "credit"
-                else:
-                    result["direction"] = "debit"
-            # Reformat date to YYYY-MM-DD if possible
-            if "date" in result:
-                try:
-                    sep = "/" if "/" in result["date"] else "-"
-                    parts = result["date"].split(sep)
-                    if len(parts) == 3:
-                        if len(parts[2]) == 2:
-                            year = "20" + parts[2]
-                        else:
-                            year = parts[2]
-                        # Try to detect if format is DD-MM-YYYY or YYYY-MM-DD
-                        if int(parts[0]) > 31:  # year first
-                            result["date"] = f"{parts[0]}-{parts[1]}-{parts[2]}"
-                        else:
-                            result["date"] = f"{year}-{parts[1]}-{parts[0]}"
-                except Exception:
-                    pass  # Leave original date if parsing fails
-            import logging
-            logging.basicConfig(level=logging.INFO)
-            for key, value in result.items():
-                logging.info(f"{key}: {value}")
-            if "amount" in result:
-                result["amount"] = float(result["amount"].replace(",", ""))
-            # Generate a transaction ID if not already present
-            if "transactionid" not in result or not result["transactionid"]:
-                result["transactionid"] = f"{result.get('card_number', '')}_{result.get('amount', '')}_{result.get('date', '')}"
-            # Add transactiontype if missing
-            if "transactiontype" not in result or not result["transactiontype"]:
-                if "credit" in result.get("card", "").lower():
-                    result["transactiontype"] = "credit card"
-                elif "debit" in result.get("card", "").lower():
-                    result["transactiontype"] = "debit card"
-                else:
-                    result["transactiontype"] = "unknown"
-            # Set category based on merchant_name or other rules
-            if "category" not in result:
-                merchant = result.get("merchant_name", "").lower()
-                subject_keywords = email_body.lower()
-                found_category = None
-                for category, senders in email_map.items():
-                    for sender in senders:
-                        if sender.lower() in subject_keywords:
-                            found_category = category
-                            break
-                    if found_category:
-                        break
-                if not found_category:
-                    for keyword, cat in category_map.items():
-                        if keyword.lower() in merchant:
-                            found_category = cat
-                            break
-                result["category"] = found_category if found_category else "others"
-            # Normalize debit transactions
-            if result.get("direction") == "debit":
-                result = normalize_debit_transaction(result)
-            return result
-    return None
 
 def verify_html_cleanup(cleaned_text):
     """Check if HTML tags or major HTML constructs still remain in the cleaned text."""

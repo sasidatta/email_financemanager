@@ -1,3 +1,7 @@
+"""
+Category and email mapping for transaction classification.
+"""
+
 category_map = {
     "food": ["swiggy", "zomato", "restaurant"],
     "fuel": ["indian oil", "hpcl", "fuel"],

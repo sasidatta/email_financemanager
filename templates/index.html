@@ -4,14 +4,21 @@
     <script>
         // Fetch emails from the server and display status
         function fetchEmails() {
+            const resultElem = document.getElementById("result");
+            const progressElem = document.getElementById("progress");
+            resultElem.innerText = '';
+            progressElem.style.display = 'inline-block';
+            progressElem.innerText = 'Fetching emails...';
             fetch('/fetch-emails')
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById("result").innerText =
+                    progressElem.style.display = 'none';
+                    resultElem.innerText =
                         `Inserted: ${data.inserted} emails\nMessage: ${data.message}\nStart Date: ${data.start_date}\nLast Email Timestamp: ${data.last_timestamp}`;
                 })
                 .catch(() => {
-                    document.getElementById("result").innerText = 'Error fetching emails.';
+                    progressElem.style.display = 'none';
+                    resultElem.innerText = 'Error fetching emails.';
                 });
         }
 
@@ -56,6 +63,7 @@
 <body>
     <h2>Bank Email Fetcher</h2>
     <button onclick="fetchEmails()">Fetch Emails</button>
+    <span id="progress" style="display:none; margin-left:10px; color: #007bff; font-weight: bold;"></span>
     <button onclick="cleanupEmails()">Cleanup DB</button>
     <button onclick="location.href='/status'">View Sync Status</button>
     <button onclick="location.href='/transactions'">View Transactions</button>

@@ -4,9 +4,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def handle_upi_email(subject, body, email_data):
+def handle_upi_email(subject: str, body: str, email_data: dict) -> dict:
+    """Parse UPI email for transaction details and update email_data dict."""
     try:
-
         # Write the email body content to body.txt for later analysis
         with open("body.txt", "a", encoding="utf-8") as f:
            f.write(f"Subject: {subject}\n")
