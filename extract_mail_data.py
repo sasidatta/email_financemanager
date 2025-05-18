@@ -7,7 +7,7 @@ import pdb
 from categories import category_map
 from categories import email_map
 from cleaner_script import cleanup_html_content, verify_html_cleanup
-from patterns import bank_regex_patterns, normalize_debit_transaction, select_best_pattern
+from patterns import bank_regex_patterns, select_best_pattern
 import logging
 
 logger = logging.getLogger(__name__)
