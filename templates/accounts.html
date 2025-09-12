@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage Accounts</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8fafc; }
+        .container { margin-top: 40px; }
+        .card { box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+        .table thead { background: #e9ecef; }
+        .btn { min-width: 80px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2 class="mb-4">Accounts</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <div class="card p-4 mb-4">
+        <form class="row g-3" method="POST" action="{{ url_for('add_account') }}">
+            <div class="col-md-3">
+                <input type="text" class="form-control" name="account_name" placeholder="Account Name" required>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" name="account_type" required>
+                    <option value="">Type</option>
+                    <option>Savings</option>
+                    <option>Current</option>
+                    <option>Credit Card</option>
+                    <option>Loan</option>
+                    <option>Wallet</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="text" class="form-control" name="bank_name" placeholder="Bank Name">
+            </div>
+            <div class="col-md-2">
+                <input type="text" class="form-control" name="account_number" placeholder="Last 4 Digits">
+            </div>
+            <div class="col-md-1">
+                <input type="number" step="0.01" class="form-control" name="credit_limit" placeholder="Limit">
+            </div>
+            <div class="col-md-1">
+                <input type="number" step="0.01" class="form-control" name="current_balance" placeholder="Balance">
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary">Add</button>
+            </div>
+        </form>
+    </div>
+    <div class="card p-4">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Bank</th>
+                    <th>Number</th>
+                    <th>Limit</th>
+                    <th>Balance</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% if accounts %}
+            {% for acc in accounts %}
+                <tr>
+                    <form method="POST" action="{{ url_for('edit_account', account_id=acc.id) }}">
+                        <td><input type="text" class="form-control" name="account_name" value="{{ acc.account_name }}" required></td>
+                        <td>
+                            <select class="form-select" name="account_type" required>
+                                <option {% if acc.account_type == 'Savings' %}selected{% endif %}>Savings</option>
+                                <option {% if acc.account_type == 'Current' %}selected{% endif %}>Current</option>
+                                <option {% if acc.account_type == 'Credit Card' %}selected{% endif %}>Credit Card</option>
+                                <option {% if acc.account_type == 'Loan' %}selected{% endif %}>Loan</option>
+                                <option {% if acc.account_type == 'Wallet' %}selected{% endif %}>Wallet</option>
+                            </select>
+                        </td>
+                        <td><input type="text" class="form-control" name="bank_name" value="{{ acc.bank_name }}"></td>
+                        <td><input type="text" class="form-control" name="account_number" value="{{ acc.account_number[-4:] if acc.account_number }}"></td>
+                        <td><input type="number" step="0.01" class="form-control" name="credit_limit" value="{{ acc.credit_limit | default(0) }}"></td>
+                        <td><input type="number" step="0.01" class="form-control" name="current_balance" value="{{ acc.current_balance | default(0) }}"></td>
+                        <td>
+                            <button type="submit" class="btn btn-success btn-sm">Save</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('delete_account', account_id=acc.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-danger btn-sm ms-1">Delete</button>
+                    </form>
+                        </td>
+                </tr>
+            {% endfor %}
+            {% else %}
+                <tr><td colspan="7" class="text-center">No accounts found</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+    <a href="{{ url_for('index') }}" class="btn btn-link mt-3">← Back to Home</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -30,26 +30,48 @@ pip install -r requirements.txt
 
 3. **Configure the application**
 
-Edit `config.yaml` with your email and database credentials:
+Create a `.env` file in the project root with your credentials:
 
-```yaml
-email:
-  address: "your_email@example.com"
-  password: "your_app_password"
-  imap_server: "imap.mail.yahoo.com"
-database:
-  host: "localhost"
-  port: 5432
-  dbname: "emaildb"
-  user: "bankuser"
-  password: "bankpass"
-app:
-  debug: true
-  host: "0.0.0.0"
-  port: 5000
+```bash
+# Copy the example file
+cp env.example .env
+
+# Edit .env with your actual credentials
+nano .env
 ```
 
-4. **Run the app**
+Required environment variables:
+- `YAHOO_EMAIL`: Your email address
+- `YAHOO_APP_PASSWORD`: Your email app password
+- `IMAP_SERVER`: IMAP server (default: imap.mail.yahoo.com)
+- `POSTGRES_HOST`: Database host
+- `POSTGRES_DB`: Database name
+- `POSTGRES_USER`: Database username
+- `POSTGRES_PASSWORD`: Database password
+- `ADMIN_TOKEN`: Secure token for admin operations
+
+4. **Set up the database**
+
+```bash
+# Run the database setup script
+python setup_database.py
+```
+
+This will:
+- Create the database if it doesn't exist
+- Set up all tables, indexes, and constraints
+- Insert default categories
+
+**Note:** If you have existing data in the `debit_transactions` table, run the migration:
+
+```bash
+# When your database is accessible, run:
+python run_migration.py
+```
+
+This will migrate your existing transaction data to the new schema.
+
+5. **Run the app**
 
 ```bash
 python app.py
