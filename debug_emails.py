@@ -7,7 +7,7 @@ import os
 import sys
 from dotenv import load_dotenv
 from email_fetcher import connect_to_imap, fetch_emails
-from extract_mail_data import parse_email_content, extract_transaction_data, should_skip_email
+from data import parse_email_content, extract_transaction_data, should_skip_email
 from patterns import select_best_pattern, bank_regex_patterns
 
 load_dotenv()

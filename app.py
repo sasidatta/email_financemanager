@@ -1,5 +1,4 @@
 from flask import Flask, render_template, jsonify, request, redirect, url_for, flash
-from flask import Flask, render_template, jsonify, request
 from config_loader import Config
 from db import get_cursor
 from email_fetcher import connect_to_imap, fetch_emails
@@ -17,6 +16,104 @@ import re
 import hashlib
 import sys, pdb 
 import db
+
+def process_transaction_email(txn_data, cursor):
+    """
+    Process a transaction email and insert into the transactions table.
+    Normalizes and assigns defaults to required fields.
+    """
+    # Assign defaults and normalize fields
+    required_keys = ["subject", "imap_server", "merchant_name", "transactiontype", "message_id"]
+    # Set default values if missing
+    for key in required_keys:
+        if key not in txn_data or txn_data[key] in [None, ""]:
+            if key == "subject":
+                txn_data[key] = ""
+            elif key == "imap_server":
+                txn_data[key] = IMAP_SERVER if 'IMAP_SERVER' in globals() else ""
+            elif key == "merchant_name":
+                txn_data[key] = "unknown"
+            elif key == "transactiontype":
+                txn_data[key] = "debit"
+            elif key == "message_id":
+                # Generate a message_id if not present (use subject, email_timestamp, merchant_name)
+                subject = txn_data.get("subject", "")
+                email_timestamp = txn_data.get("email_timestamp", "")
+                merchant_name = txn_data.get("merchant_name", "")
+                unique_str = f"{subject}{email_timestamp}{merchant_name}"
+                txn_data[key] = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
+    # Normalize transactiontype
+    txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
+    # Ensure email_timestamp is set (default to now if missing)
+    if not txn_data.get("email_timestamp"):
+        txn_data["email_timestamp"] = datetime.now(timezone.utc)
+    # Log warnings for missing fields before validation
+    missing_fields = [k for k in required_keys if not txn_data.get(k)]
+    if missing_fields:
+        logger.warning(f"Transaction missing fields {missing_fields}: {txn_data}")
+    if not is_valid_transaction(txn_data):
+        logger.warning(f"Transaction missing critical fields or invalid: {txn_data}")
+        return False
+    inserted = insert_transaction_to_db(txn_data, cursor)
+    if inserted:
+        logger.info(f"Transaction inserted successfully: {txn_data.get('message_id')}")
+        return True
+    else:
+        logger.error(f"Failed to insert transaction for message_id: {txn_data.get('message_id')}")
+        return False
+
+def process_bill_email(txn_data, cursor):
+    """
+    Process a bill email and insert into the bills table.
+    """
+    # The keys and normalization logic are similar to transaction, but use insert_bill_to_db
+    required_keys = ["amount", "merchant_name", "transactiontype", "category", "subject", "message_id"]
+    # Add missing fields with defaults for validation
+    for key in required_keys:
+        if key not in txn_data:
+            if key == "merchant_name":
+                txn_data[key] = "unknown"
+            elif key == "transactiontype":
+                txn_data[key] = "debit"
+            elif key == "category":
+                txn_data[key] = "unknown"
+            elif key == "subject":
+                txn_data[key] = ""
+            elif key == "message_id":
+                txn_data[key] = ""
+            elif key == "amount":
+                txn_data[key] = 0.0
+    inserted = insert_bill_to_db(txn_data, cursor)
+    if inserted:
+        logger.info(f"Bill inserted successfully: {txn_data.get('message_id')}")
+        return True
+    else:
+        logger.error(f"Failed to insert bill for message_id: {txn_data.get('message_id')}")
+        return False
+
+def process_statement_email(txn_data, cursor):
+    """
+    Process a statement email and insert into the loans/statements table.
+    """
+    try:
+        from db import insert_loan_to_db
+        inserted = insert_loan_to_db(txn_data, cursor)
+        if inserted:
+            logger.info(f"Statement/loan inserted successfully: {txn_data.get('message_id')}")
+            return True
+        else:
+            logger.error(f"Failed to insert statement/loan for message_id: {txn_data.get('message_id')}")
+            return False
+    except Exception as e:
+        logger.error(f"Error processing statement email: {e}", exc_info=True)
+        return False
+
+def process_dividend_email(txn_data, cursor):
+    """
+    Process a dividend email. Placeholder for actual implementation.
+    """
+    logger.warning(f"Dividend email processing not implemented. txn_data: {txn_data}")
+    return False
 
 config = Config()
 app_conf = config.app
@@ -273,85 +370,228 @@ def assign_category(subject, body):
 
 
 
+
+# --- Helper functions for /fetch-emails ---
+
+def parse_fetch_params(request):
+    """
+    Extracts and validates fetch parameters from the request.
+    Returns a dictionary with parsed values or a Flask response for error.
+    """
+    params = request.get_json() if request.method == 'POST' and request.is_json else request.args
+    n_days = params.get('n_days')
+    start_date = params.get('start_date')
+    end_date = params.get('end_date')
+    parsed_start_date = parsed_end_date = None
+    start_index = params.get('start_index', None)
+    batch_size = params.get('batch_size', None)
+
+    if start_index is not None:
+        try:
+            start_index = int(start_index)
+        except Exception:
+            start_index = 0
+    else:
+        start_index = 0
+    if batch_size is not None:
+        try:
+            batch_size = int(batch_size)
+        except Exception:
+            batch_size = None
+
+    if start_date or end_date:
+        if not (start_date and end_date):
+            return jsonify({"error": "Both start_date and end_date are required if filtering by date."}), 400
+        try:
+            parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except Exception:
+            return jsonify({"error": "Invalid date format for start_date or end_date. Use YYYY-MM-DD."}), 400
+        if parsed_start_date > parsed_end_date:
+            return jsonify({"error": "start_date cannot be after end_date."}), 400
+
+    if n_days is not None:
+        try:
+            n_days = int(n_days)
+        except Exception:
+            n_days = None
+    if n_days is not None and (n_days <= 0 or n_days > 90):
+        return jsonify({"error": "n_days must be between 1 and 90."}), 400
+
+    # Set default fallback for email fetching filter
+    if n_days is None and (start_date is None or end_date is None):
+        n_days = 3  # default to last 3 days
+
+    # Keywords
+    default_keywords = [
+        "transaction", "debited", "credited", "upi", "imps", "neft",
+        "credit card", "debit card", "spent", "payment", "paid"
+    ]
+    req_keywords = params.get('keywords')
+    if isinstance(req_keywords, str):
+        if req_keywords.strip().lower() in ('all', '*'):
+            keywords = None  # opt-out: fetch all within date filter
+        else:
+            keywords = [k.strip() for k in req_keywords.split(',') if k.strip()]
+    elif isinstance(req_keywords, list):
+        if len(req_keywords) == 0:
+            keywords = None
+        else:
+            keywords = [str(k).strip() for k in req_keywords if str(k).strip()]
+    else:
+        keywords = default_keywords
+
+    return {
+        "n_days": n_days,
+        "start_date": parsed_start_date,
+        "end_date": parsed_end_date,
+        "start_index": start_index,
+        "batch_size": batch_size,
+        "keywords": keywords,
+    }
+
+def connect_imap_with_retry(imap_server):
+    """
+    Connects to IMAP server with retry decorator.
+    Returns the IMAP connection object or a Flask response for error.
+    """
+    try:
+        imap = retry(Exception, tries=3, delay=2, backoff=2, logger=logger)(connect_to_imap)(imap_server)
+        return imap
+    except Exception as e:
+        logger.error(f"IMAP connection/login failed: {e}", exc_info=True)
+        return jsonify({"error": "Failed to connect/login to IMAP server."}), 502
+
+def process_email_chunk(chunk, cursor):
+    """
+    Processes a list of raw email bytes, parses each, extracts transactions,
+    normalizes fields, chooses the correct processor, and returns count processed.
+    """
+    from email.parser import BytesParser
+    from email import policy
+    count = 0
+    for raw_bytes in chunk:
+        try:
+            msg = BytesParser(policy=policy.default).parsebytes(raw_bytes)
+            message_id = msg.get('Message-ID')
+            logger.debug(f"Using parse_email_content from: {parse_email_content}")
+            try:
+                subject, body, sender_email, email_date, mail_category = parse_email_content(raw_bytes)
+            except Exception as e:
+                raw_headers = msg.items()
+                logger.warning(f"Failed to parse email content: {e}. Raw headers: {raw_headers}, Raw bytes length: {len(raw_bytes)}")
+                subject = ""
+                body = ""
+                sender_email = ""
+
+            date_hdr = msg.get('Date')
+            sender = get_sender_from_email(sender_email, email_map)
+
+            txn_data = extract_transaction_data(body, subject)
+            if txn_data and "amount" in txn_data:
+                normalized_amount = normalize_amount(txn_data.get("amount"))
+                txn_data["amount"] = normalized_amount
+
+            if (not txn_data or txn_data.get("transactiontype") is None) and ("upi" in (subject+body).lower()):
+                try:
+                    handler_result = handle_upi_email(subject, body, {})
+                    txn_data = txn_data or {}
+                    if isinstance(handler_result, dict):
+                        if "amount" in handler_result and handler_result["amount"] not in (None, ""):
+                            txn_data["amount"] = normalize_amount(handler_result["amount"]) or txn_data.get("amount")
+                        if "merchant" in handler_result and handler_result["merchant"]:
+                            txn_data["merchant_name"] = handler_result["merchant"]
+                        if "reference" in handler_result and handler_result["reference"]:
+                            txn_data["message_id"] = txn_data.get("message_id") or handler_result["reference"]
+                        if "card_info" in handler_result and handler_result["card_info"]:
+                            txn_data["card_number"] = handler_result["card_info"]
+                    if txn_data is None:
+                        txn_data = {}
+                    for key in ["merchant_name", "transactiontype", "category", "subject", "imap_server", "message_id"]:
+                        if key not in txn_data:
+                            if key == "transactiontype":
+                                txn_data[key] = "upi"
+                            elif key == "category":
+                                txn_data[key] = "unknown"
+                            elif key == "subject":
+                                txn_data[key] = subject
+                            elif key == "imap_server":
+                                txn_data[key] = IMAP_SERVER
+                            elif key == "merchant_name":
+                                txn_data[key] = "unknown"
+                            elif key == "message_id":
+                                txn_data[key] = message_id or hashlib.sha256(f"{subject}{date_hdr}{sender_email}".encode('utf-8')).hexdigest()
+                    if not isinstance(txn_data.get("amount"), (int, float)):
+                        txn_data["amount"] = normalize_amount(txn_data.get("amount"))
+                    txn_data["email_timestamp"] = email_date
+                except Exception as e:
+                    logger.warning(f"UPI parser failed for email: {e}")
+            elif txn_data:
+                if email_date:
+                    txn_data["email_timestamp"] = email_date
+
+            category_value = "unknown"
+            if txn_data:
+                if not txn_data.get("category") or txn_data["category"] == "unknown":
+                    txn_data["category"] = assign_category(subject, body)
+                category_value = txn_data.get("category") or "unknown"
+                txn_data.setdefault("subject", subject)
+                txn_data.setdefault("imap_server", IMAP_SERVER)
+                txn_data.setdefault("merchant_name", "unknown")
+                txn_data.setdefault("transactiontype", "upi" if "upi" in (subject+body).lower() else "debit")
+                txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
+                if not message_id or message_id.strip() == "":
+                    unique_str = f"{subject}{date_hdr}{sender_email}"
+                    message_id = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
+                txn_data["message_id"] = message_id
+                if email_date:
+                    txn_data["email_timestamp"] = email_date
+                missing_fields = [k for k in ["subject", "imap_server", "message_id"] if not txn_data.get(k)]
+                if missing_fields:
+                    logger.warning(f"Transaction missing fields {missing_fields}: {txn_data}")
+                mail_category_lower = (mail_category or "").lower()
+                processed = False
+                if mail_category_lower == "transaction":
+                    processed = process_transaction_email(txn_data, cursor)
+                elif mail_category_lower == "bill_payment":
+                    processed = process_bill_email(txn_data, cursor)
+                elif mail_category_lower == "statement":
+                    processed = process_statement_email(txn_data, cursor)
+                elif mail_category_lower == "dividend":
+                    processed = process_dividend_email(txn_data, cursor)
+                else:
+                    processed = process_transaction_email(txn_data, cursor)
+                if processed:
+                    count += 1
+            else:
+                category_value = assign_category(subject, body)
+                logger.warning(f"Failed to extract transaction data for email with Message-ID: {message_id}")
+        except Exception as e:
+            logger.error(f"Error processing email: {e}", exc_info=True)
+            continue
+    return count
+
+
 @app.route('/fetch-emails', methods=['GET', 'POST'])
 def fetch_emails_route():
     imap_server = IMAP_SERVER
     imap = None
     try:
-        params = request.get_json() if request.method == 'POST' and request.is_json else request.args
-        n_days = params.get('n_days')
-        start_date = params.get('start_date')
-        end_date = params.get('end_date')
-        parsed_start_date = parsed_end_date = None
-        start_index = params.get('start_index', None)
-        batch_size = params.get('batch_size', None)
-
-        if start_index is not None:
-            try:
-                start_index = int(start_index)
-            except Exception:
-                start_index = 0
-        else:
-            start_index = 0
-        if batch_size is not None:
-            try:
-                batch_size = int(batch_size)
-            except Exception:
-                batch_size = None
-
-        if start_date or end_date:
-            if not (start_date and end_date):
-                return jsonify({"error": "Both start_date and end_date are required if filtering by date."}), 400
-            try:
-                parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-                parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            except Exception:
-                return jsonify({"error": "Invalid date format for start_date or end_date. Use YYYY-MM-DD."}), 400
-            if parsed_start_date > parsed_end_date:
-                return jsonify({"error": "start_date cannot be after end_date."}), 400
-
-        if n_days is not None:
-            try:
-                n_days = int(n_days)
-            except Exception:
-                n_days = None
-        if n_days is not None and (n_days <= 0 or n_days > 90):
-            return jsonify({"error": "n_days must be between 1 and 90."}), 400
-
-        # Set default fallback for email fetching filter
-        if n_days is None and (start_date is None or end_date is None):
-            n_days = 3  # default to last 3 days
-
-        start_date = parsed_start_date
-        end_date = parsed_end_date
-
-        try:
-            imap = retry(Exception, tries=3, delay=2, backoff=2, logger=logger)(connect_to_imap)(imap_server)
-        except Exception as e:
-            logger.error(f"IMAP connection/login failed: {e}", exc_info=True)
-            return jsonify({"error": "Failed to connect/login to IMAP server."}), 502
-
-        # Fetch emails (batching handled in chunk loop below)
-        # IMAP-side keyword filtering (can be overridden via request)
-        default_keywords = [
-            "transaction", "debited", "credited", "upi", "imps", "neft",
-            "credit card", "debit card", "spent", "payment", "paid"
-        ]
-        # allow client to override via keywords CSV or array
-        req_keywords = params.get('keywords')
-        if isinstance(req_keywords, str):
-            if req_keywords.strip().lower() in ('all', '*'):
-                keywords = None  # opt-out: fetch all within date filter
-            else:
-                keywords = [k.strip() for k in req_keywords.split(',') if k.strip()]
-        elif isinstance(req_keywords, list):
-            if len(req_keywords) == 0:
-                keywords = None  # opt-out
-            else:
-                keywords = [str(k).strip() for k in req_keywords if str(k).strip()]
-        else:
-            keywords = default_keywords
-
+        # 1. Parse parameters
+        params_or_resp = parse_fetch_params(request)
+        if isinstance(params_or_resp, tuple):  # error response from helper
+            return params_or_resp
+        params = params_or_resp
+        n_days = params.get("n_days")
+        start_date = params.get("start_date")
+        end_date = params.get("end_date")
+        keywords = params.get("keywords")
+        # 2. Connect to IMAP
+        imap_or_resp = connect_imap_with_retry(imap_server)
+        if isinstance(imap_or_resp, tuple):  # error response from helper
+            return imap_or_resp
+        imap = imap_or_resp
+        # 3. Fetch emails
         raw_emails = fetch_emails(
             imap,
             n_days=n_days,
@@ -363,133 +603,16 @@ def fetch_emails_route():
         if not raw_emails:
             filter_info = f"last {n_days} days" if n_days else f"{start_date.isoformat()} to {end_date.isoformat()}" if start_date else "no filter"
             return jsonify({"saved": 0, "message": "No emails found for the given filter.", "filter": filter_info})
-
         count = 0
         with get_cursor() as (cursor, conn):
-            from email.parser import BytesParser
-            from email import policy
-            # Process emails in chunks to reduce memory usage
             for i in range(0, len(raw_emails), CHUNK_SIZE):
                 chunk = raw_emails[i:i+CHUNK_SIZE]
-                for raw_bytes in chunk:
-                    try:
-                        msg = BytesParser(policy=policy.default).parsebytes(raw_bytes)
-                        message_id = msg.get('Message-ID')
-                        try:
-                            subject, body, sender_email, email_date = parse_email_content(raw_bytes)
-                        except Exception as e:
-                            # Log raw headers and raw_bytes on parse failure
-                            raw_headers = msg.items()
-                            logger.warning(f"Failed to parse email content: {e}. Raw headers: {raw_headers}, Raw bytes length: {len(raw_bytes)}")
-                            subject = ""
-                            body = ""
-                            sender_email = ""
-
-                        date_hdr = msg.get('Date')
-                        sender = get_sender_from_email(sender_email, email_map)
-
-
-                        
-                        #pdb.Pdb(stdout=sys.stdout).set_trace()
-
-                        txn_data = extract_transaction_data(body, subject)
-                        # Normalize amount if present
-                        if txn_data and "amount" in txn_data:
-                            normalized_amount = normalize_amount(txn_data.get("amount"))
-                            txn_data["amount"] = normalized_amount
-
-                        if (not txn_data or txn_data.get("transactiontype") is None) and ("upi" in (subject+body).lower()):
-                            try:
-                                # Inline fallback for UPI email parsing
-                                handler_result = handle_upi_email(subject, body, {})
-                                txn_data = txn_data or {}
-                                # Map handler_result keys to our schema if present
-                                if isinstance(handler_result, dict):
-                                    # amount
-                                    if "amount" in handler_result and handler_result["amount"] not in (None, ""):
-                                        txn_data["amount"] = normalize_amount(handler_result["amount"]) or txn_data.get("amount")
-                                    # merchant name
-                                    if "merchant" in handler_result and handler_result["merchant"]:
-                                        txn_data["merchant_name"] = handler_result["merchant"]
-                                    # transaction id / reference
-                                    if "reference" in handler_result and handler_result["reference"]:
-                                        txn_data["message_id"] = txn_data.get("message_id") or handler_result["reference"]
-                                    # card info
-                                    if "card_info" in handler_result and handler_result["card_info"]:
-                                        txn_data["card_number"] = handler_result["card_info"]
-                                # Ensure all required keys are set with correct types for UPI fallback
-                                if txn_data is None:
-                                    txn_data = {}
-                                for key in ["merchant_name", "transactiontype", "category", "subject", "imap_server", "message_id"]:
-                                    if key not in txn_data:
-                                        if key == "transactiontype":
-                                            txn_data[key] = "upi"
-                                        elif key == "category":
-                                            txn_data[key] = "unknown"
-                                        elif key == "subject":
-                                            txn_data[key] = subject
-                                        elif key == "imap_server":
-                                            txn_data[key] = imap_server
-                                        elif key == "merchant_name":
-                                            txn_data[key] = "unknown"
-                                        elif key == "message_id":
-                                            txn_data[key] = message_id or hashlib.sha256(f"{subject}{date_hdr}{sender_email}".encode('utf-8')).hexdigest()
-                                # Type corrections (for UPI fallback)
-                                if not isinstance(txn_data.get("amount"), (int, float)):
-                                    txn_data["amount"] = normalize_amount(txn_data.get("amount"))
-                                # Always set email_timestamp for UPI fallback
-                                txn_data["email_timestamp"] = email_date
-                            except Exception as e:
-                                logger.warning(f"UPI parser failed for email: {e}")
-                        elif txn_data:
-                            # Always set email_timestamp for extracted txn
-                            if email_date:
-                                txn_data["email_timestamp"] = email_date
-
-                        category_value = "unknown"
-                        if txn_data:
-                            if not txn_data.get("category") or txn_data["category"] == "unknown":
-                                txn_data["category"] = assign_category(subject, body)
-                            category_value = txn_data.get("category") or "unknown"
-                            # Add missing fields with defaults for validation
-                            txn_data.setdefault("subject", subject)
-                            txn_data.setdefault("imap_server", imap_server)
-                            txn_data.setdefault("merchant_name", "unknown")
-                            txn_data.setdefault("transactiontype", "upi" if "upi" in (subject+body).lower() else "debit")
-                            txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
-                            # Transaction uniqueness: generate message_id if missing
-                            if not message_id or message_id.strip() == "":
-                                unique_str = f"{subject}{date_hdr}{sender_email}"
-                                message_id = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
-                            txn_data["message_id"] = message_id
-                            # Set email_timestamp only if email_date is not None
-                            if email_date:
-                                txn_data["email_timestamp"] = email_date
-                            # Log if any required field is missing
-                            missing_fields = [k for k in ["subject", "imap_server", "message_id"] if not txn_data.get(k)]
-                            if missing_fields:
-                                logger.warning(f"Transaction missing fields {missing_fields}: {txn_data}")
-                            if not is_valid_transaction(txn_data):
-                                logger.warning(f"Transaction missing critical fields or invalid: {txn_data}")
-                            else:
-                                inserted = insert_transaction_to_db(txn_data, cursor)
-                                if inserted:
-                                    count += 1
-                                    logger.info(f"Transaction inserted successfully: {txn_data.get('message_id')}")
-                                else:
-                                    logger.error(f"Failed to insert transaction for message_id: {txn_data.get('message_id')}")
-                        else:
-                            category_value = assign_category(subject, body)
-                            logger.warning(f"Failed to extract transaction data for email with Message-ID: {message_id}")
-                    except Exception as e:
-                        logger.error(f"Error processing email: {e}", exc_info=True)
-                        continue
+                processed_count = process_email_chunk(chunk, cursor)
+                count += processed_count
             conn.commit()
-
         filter_info = f"last {n_days} days" if n_days else f"{start_date.isoformat()} to {end_date.isoformat()}" if start_date else "no filter"
         logger.info(f"Saved {count} email transactions to database.")
         return jsonify({"saved": count, "message": "Email transactions saved to database", "filter": filter_info})
-
     except Exception as e:
         logger.error(f"Error fetching emails: {e}", exc_info=True)
         return jsonify({"error": "Failed to fetch emails"}), 500
@@ -512,9 +635,18 @@ def cleanup_emails():
     try:
         with get_cursor() as (cursor, conn):
             cursor.execute("DELETE FROM transactions;")
-            deleted_count = cursor.rowcount
+            transactions_deleted = cursor.rowcount
+            cursor.execute("DELETE FROM bills;")
+            bills_deleted = cursor.rowcount
+            #cursor.execute("DELETE FROM loans;")
+            #loans_deleted = cursor.rowcount
             conn.commit()
-            return jsonify({"deleted": deleted_count, "message": "All emails deleted from DB."})
+            return jsonify({
+                "deleted_transactions": transactions_deleted,
+                "deleted_bills": bills_deleted,
+                #"deleted_loans": loans_deleted,
+                "message": "All emails, bills, and loans deleted from DB."
+            })
     except Exception as e:
         logger.error(f"Error cleaning up emails: {e}", exc_info=True)
         return jsonify({"error": "Failed to clean up emails"}), 500

@@ -5,7 +5,7 @@ Pattern testing utility for fine-tuning transaction regex patterns.
 
 import re
 from patterns import bank_regex_patterns, select_best_pattern
-from extract_mail_data import extract_transaction_data
+from data import extract_transaction_data
 
 def test_pattern(pattern_name, sample_text, expected_fields=None):
     """Test a specific pattern against sample text."""
