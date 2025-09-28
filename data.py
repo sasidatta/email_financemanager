@@ -58,6 +58,8 @@ def is_transaction_email(email_body: str) -> bool:
 def extract_transaction_data(email_body: str) -> dict:
     """Extract transaction data from an email body using the best matching pattern."""
     # Filter out non-transactional emails
+    pdb.Pdb(stdout=sys.__stdout__).set_trace()
+
     if not is_transaction_email(email_body):
         logger.info("Email skipped as non-transactional.")
         return None

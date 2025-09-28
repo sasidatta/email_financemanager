@@ -1,3 +1,4 @@
+from unicodedata import category
 from flask import Flask, render_template, jsonify, request, redirect, url_for, flash
 from config_loader import Config
 from db import get_cursor
@@ -17,19 +18,21 @@ import hashlib
 import sys, pdb 
 import db
 
-def process_transaction_email(txn_data, cursor):
+def process_transaction_email(subject, body, sender_email, email_date,cursor):
     """
     Process a transaction email and insert into the transactions table.
     Normalizes and assigns defaults to required fields.
     """
+    pdb.Pdb(stdout=sys.__stdout__).set_trace()
+
+    txn_data = extract_transaction_data(body)
+
     # Assign defaults and normalize fields
-    required_keys = ["subject", "imap_server", "merchant_name", "transactiontype", "message_id"]
+    required_keys = ["date","imap_server", "merchant_name", "transactiontype", "message_id"]
     # Set default values if missing
     for key in required_keys:
         if key not in txn_data or txn_data[key] in [None, ""]:
-            if key == "subject":
-                txn_data[key] = ""
-            elif key == "imap_server":
+            if key == "imap_server":
                 txn_data[key] = IMAP_SERVER if 'IMAP_SERVER' in globals() else ""
             elif key == "merchant_name":
                 txn_data[key] = "unknown"
@@ -42,17 +45,19 @@ def process_transaction_email(txn_data, cursor):
                 merchant_name = txn_data.get("merchant_name", "")
                 unique_str = f"{subject}{email_timestamp}{merchant_name}"
                 txn_data[key] = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
+
+                
     # Normalize transactiontype
     txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
     # Ensure email_timestamp is set (default to now if missing)
-    if not txn_data.get("email_timestamp"):
+    if not txn_data.get("date"):
         txn_data["email_timestamp"] = datetime.now(timezone.utc)
     # Log warnings for missing fields before validation
     missing_fields = [k for k in required_keys if not txn_data.get(k)]
     if missing_fields:
         logger.warning(f"Transaction missing fields {missing_fields}: {txn_data}")
-    if not is_valid_transaction(txn_data):
-        logger.warning(f"Transaction missing critical fields or invalid: {txn_data}")
+    #if not is_valid_transaction(txn_data):
+    #    logger.warning(f"Transaction missing critical fields or invalid: {txn_data}")
         return False
     inserted = insert_transaction_to_db(txn_data, cursor)
     if inserted:
@@ -166,35 +171,7 @@ DB_PASS = get_config_value("POSTGRES_PASSWORD", config.database.get("password"))
 CHUNK_SIZE = int(get_config_value("EMAIL_FETCH_CHUNK_SIZE", 50))
 ADMIN_TOKEN = get_config_value("ADMIN_TOKEN", None)
 
-def get_sender_from_email(email_id, email_map):
-    if not email_id:
-        return "unknown"
-    email_lower = email_id.strip().lower()
-    for sender, addresses in email_map.items():
-        if isinstance(addresses, (list, tuple)):
-            if any(email_lower == addr.strip().lower() for addr in addresses):
-                return sender
-        else:
-            if email_lower == str(addresses).strip().lower():
-                return sender
-    return "unknown"
 
-def is_valid_transaction(txn_data):
-    required_keys = ["amount", "merchant_name", "transactiontype", "category", "subject", "imap_server", "message_id"]
-    for key in required_keys:
-        if key not in txn_data or txn_data[key] in [None, ""]:
-            return False
-    # Type checks
-    amount = txn_data.get("amount")
-    if not (isinstance(amount, (int, float))):
-        return False
-    if amount <= 0:
-        return False
-    # transactiontype strict validation
-    valid_types = {"debit", "credit", "upi"}
-    if str(txn_data.get("transactiontype", "")).lower() not in valid_types:
-        return False
-    return True
 
 def normalize_amount(amount):
     if isinstance(amount, str):
@@ -220,10 +197,11 @@ def normalize_transaction_type(transaction_type_value):
     return "debit"
 
 def insert_transaction_to_db(txn_data, cursor):
-    if not is_valid_transaction(txn_data):
-        logger.warning(f"Invalid transaction data skipped: {txn_data}")
-        return False
+    #if not is_valid_transaction(txn_data):
+    #    logger.warning(f"Invalid transaction data skipped: {txn_data}")
+    #    return False
     try:
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
         # Use a savepoint so a single bad row doesn't abort the whole batch
         try:
             cursor.execute("SAVEPOINT sp_txn")
@@ -271,6 +249,7 @@ def insert_bill_to_db(bill_data, cursor):
             return False
     try:
         # Use a savepoint so a single bad row doesn't abort the whole batch
+        pdb.Pdb(stdout=sys.__stdout__).set_trace()
         try:
             cursor.execute("SAVEPOINT sp_bill")
         except Exception:
@@ -328,48 +307,6 @@ def status_page():
     except Exception as e:
         logger.error(f"Error fetching status: {e}", exc_info=True)
         return jsonify({"error": "Failed to fetch status"}), 500
-
-def assign_category(subject, body):
-    text = f"{subject} {body}".lower()
-    # Priority order for deterministic assignment: more specific first, finance last
-    priority_categories = [
-        "groceries",
-        "utilities",
-        "entertainment",
-        "travel",
-        "dining",
-        "shopping",
-        "health",
-        "education",
-        "transport",
-        "finance"
-    ]
-    regex_map = {
-        "groceries": r"\b(supermarket|grocery|market|food|vegetables|fruits)\b",
-        "utilities": r"\b(electricity|water|gas|utility|bill)\b",
-        "entertainment": r"\b(movie|cinema|concert|theater|entertainment)\b",
-        "travel": r"\b(flight|hotel|taxi|uber|lyft|travel|airlines)\b",
-        "dining": r"\b(restaurant|cafe|dining|coffee|bar)\b",
-        "shopping": r"\b(store|shopping|mall|boutique|clothes|apparel)\b",
-        "health": r"\b(pharmacy|hospital|clinic|doctor|medicine)\b",
-        "education": r"\b(school|college|university|education|course)\b",
-        "transport": r"\b(bus|train|metro|transport|fare)\b",
-        "finance": r"\b(bank|loan|credit|debit|finance|investment)\b",
-    }
-    # Assign category using regex first (priority order)
-    for category in priority_categories:
-        pattern = regex_map.get(category)
-        if pattern and re.search(pattern, text):
-            return category
-    # Fallback to keywords (priority order)
-    for category in priority_categories:
-        keywords = category_map.get(category, [])
-        if any(keyword.lower() in text for keyword in keywords):
-            return category
-    return "unknown"
-
-
-
 
 # --- Helper functions for /fetch-emails ---
 
@@ -462,6 +399,27 @@ def connect_imap_with_retry(imap_server):
         logger.error(f"IMAP connection/login failed: {e}", exc_info=True)
         return jsonify({"error": "Failed to connect/login to IMAP server."}), 502
 
+def assign_email_category(subject, body, sender_email):
+    # Remove debug statements and fix logic
+    sender_email_lower = (sender_email or "").strip().lower()
+    # Check sender_email against email_map for each category
+    if sender_email_lower:
+        # Banks
+        for addr in email_map.get("banks", []):
+            if sender_email_lower == addr.strip().lower():
+                return "transaction"
+        # Amazon
+        for addr in email_map.get("amazon", []):
+            if sender_email_lower == addr.strip().lower():
+                return "amazon"
+        # Dmat
+        for addr in email_map.get("dmat", []):
+            if sender_email_lower == addr.strip().lower():
+                return "dmat"
+
+    return "unknown"
+
+
 def process_email_chunk(chunk, cursor):
     """
     Processes a list of raw email bytes, parses each, extracts transactions,
@@ -470,101 +428,37 @@ def process_email_chunk(chunk, cursor):
     from email.parser import BytesParser
     from email import policy
     count = 0
+
+    mail_data = []
     for raw_bytes in chunk:
         try:
             msg = BytesParser(policy=policy.default).parsebytes(raw_bytes)
             message_id = msg.get('Message-ID')
             logger.debug(f"Using parse_email_content from: {parse_email_content}")
             try:
-                subject, body, sender_email, email_date, mail_category = parse_email_content(raw_bytes)
+                subject, body, sender_email, email_date = parse_email_content(raw_bytes)
             except Exception as e:
                 raw_headers = msg.items()
                 logger.warning(f"Failed to parse email content: {e}. Raw headers: {raw_headers}, Raw bytes length: {len(raw_bytes)}")
                 subject = ""
                 body = ""
                 sender_email = ""
+            
+            email_category = assign_email_category(subject, body, sender_email)
+            print(f"email_category: {email_category}")
 
-            date_hdr = msg.get('Date')
-            sender = get_sender_from_email(sender_email, email_map)
-
-            txn_data = extract_transaction_data(body, subject)
-            if txn_data and "amount" in txn_data:
-                normalized_amount = normalize_amount(txn_data.get("amount"))
-                txn_data["amount"] = normalized_amount
-
-            if (not txn_data or txn_data.get("transactiontype") is None) and ("upi" in (subject+body).lower()):
-                try:
-                    handler_result = handle_upi_email(subject, body, {})
-                    txn_data = txn_data or {}
-                    if isinstance(handler_result, dict):
-                        if "amount" in handler_result and handler_result["amount"] not in (None, ""):
-                            txn_data["amount"] = normalize_amount(handler_result["amount"]) or txn_data.get("amount")
-                        if "merchant" in handler_result and handler_result["merchant"]:
-                            txn_data["merchant_name"] = handler_result["merchant"]
-                        if "reference" in handler_result and handler_result["reference"]:
-                            txn_data["message_id"] = txn_data.get("message_id") or handler_result["reference"]
-                        if "card_info" in handler_result and handler_result["card_info"]:
-                            txn_data["card_number"] = handler_result["card_info"]
-                    if txn_data is None:
-                        txn_data = {}
-                    for key in ["merchant_name", "transactiontype", "category", "subject", "imap_server", "message_id"]:
-                        if key not in txn_data:
-                            if key == "transactiontype":
-                                txn_data[key] = "upi"
-                            elif key == "category":
-                                txn_data[key] = "unknown"
-                            elif key == "subject":
-                                txn_data[key] = subject
-                            elif key == "imap_server":
-                                txn_data[key] = IMAP_SERVER
-                            elif key == "merchant_name":
-                                txn_data[key] = "unknown"
-                            elif key == "message_id":
-                                txn_data[key] = message_id or hashlib.sha256(f"{subject}{date_hdr}{sender_email}".encode('utf-8')).hexdigest()
-                    if not isinstance(txn_data.get("amount"), (int, float)):
-                        txn_data["amount"] = normalize_amount(txn_data.get("amount"))
-                    txn_data["email_timestamp"] = email_date
-                except Exception as e:
-                    logger.warning(f"UPI parser failed for email: {e}")
-            elif txn_data:
-                if email_date:
-                    txn_data["email_timestamp"] = email_date
-
-            category_value = "unknown"
-            if txn_data:
-                if not txn_data.get("category") or txn_data["category"] == "unknown":
-                    txn_data["category"] = assign_category(subject, body)
-                category_value = txn_data.get("category") or "unknown"
-                txn_data.setdefault("subject", subject)
-                txn_data.setdefault("imap_server", IMAP_SERVER)
-                txn_data.setdefault("merchant_name", "unknown")
-                txn_data.setdefault("transactiontype", "upi" if "upi" in (subject+body).lower() else "debit")
-                txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
-                if not message_id or message_id.strip() == "":
-                    unique_str = f"{subject}{date_hdr}{sender_email}"
-                    message_id = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
-                txn_data["message_id"] = message_id
-                if email_date:
-                    txn_data["email_timestamp"] = email_date
-                missing_fields = [k for k in ["subject", "imap_server", "message_id"] if not txn_data.get(k)]
-                if missing_fields:
-                    logger.warning(f"Transaction missing fields {missing_fields}: {txn_data}")
-                mail_category_lower = (mail_category or "").lower()
-                processed = False
-                if mail_category_lower == "transaction":
-                    processed = process_transaction_email(txn_data, cursor)
-                elif mail_category_lower == "bill_payment":
-                    processed = process_bill_email(txn_data, cursor)
-                elif mail_category_lower == "statement":
-                    processed = process_statement_email(txn_data, cursor)
-                elif mail_category_lower == "dividend":
-                    processed = process_dividend_email(txn_data, cursor)
-                else:
-                    processed = process_transaction_email(txn_data, cursor)
-                if processed:
-                    count += 1
-            else:
-                category_value = assign_category(subject, body)
+            if email_category == "unknown":
+                continue
+            elif email_category == "transaction":
+                process_transaction_email(subject, body, sender_email, email_date,cursor)
+            elif email_category == "bills":
+                process_bill_email(subject, body, sender_email, email_date,cursor)
+            elif email_category == "statement":
+                process_statement_email(cursor)
+            elif email_category == "divident":
+                process_dividend_email(cursor)
+          
+            else:  
                 logger.warning(f"Failed to extract transaction data for email with Message-ID: {message_id}")
         except Exception as e:
             logger.error(f"Error processing email: {e}", exc_info=True)
@@ -577,6 +471,7 @@ def fetch_emails_route():
     imap_server = IMAP_SERVER
     imap = None
     try:
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
         # 1. Parse parameters
         params_or_resp = parse_fetch_params(request)
         if isinstance(params_or_resp, tuple):  # error response from helper
@@ -586,11 +481,14 @@ def fetch_emails_route():
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         keywords = params.get("keywords")
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
         # 2. Connect to IMAP
         imap_or_resp = connect_imap_with_retry(imap_server)
         if isinstance(imap_or_resp, tuple):  # error response from helper
             return imap_or_resp
         imap = imap_or_resp
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
+
         # 3. Fetch emails
         raw_emails = fetch_emails(
             imap,
@@ -600,6 +498,8 @@ def fetch_emails_route():
             keywords=keywords,
             search_fields=["SUBJECT", "BODY"]
         )
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
+
         if not raw_emails:
             filter_info = f"last {n_days} days" if n_days else f"{start_date.isoformat()} to {end_date.isoformat()}" if start_date else "no filter"
             return jsonify({"saved": 0, "message": "No emails found for the given filter.", "filter": filter_info})

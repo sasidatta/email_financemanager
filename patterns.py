@@ -103,13 +103,11 @@ bank_regex_patterns = {
     },
     # Kotak IMPS Debit (accepts both 09-May-2025 and 09-05-2025)
     "KOTAK_IMPS_DEBIT": {
-        "pattern": re.compile(
-            r"account\s+xx\d+\s+is debited for (INR|Rs\.?|₹)\s*([\d,]+\.\d{2}).*?Beneficiary Name:\s+(.*?)\s+Beneficiary Account No:\s+(.*?)\s+Beneficiary IFSC:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks: ?(.*?) ",
-            re.IGNORECASE | re.DOTALL
-        ),
+        "pattern": re.compile(r"account\s+xx\d+\s+is debited for\s+(INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{2})?)\s*on\s+(\d{1,2}-[A-Za-z]{3}-\d{4}).*?Beneficiary Name:\s+(.*?)\s+Beneficiary Account No:\s+(.*?)\s+Beneficiary IFSC:\s+(.*?)\s+IMPS Reference No:\s+(\d+).*?Remarks:\s*(.{1,100}?)(?:\.|\n|$)", re.IGNORECASE | re.DOTALL),
         "fields": [
             "currency",
             "amount",
+            "date",
             "beneficiary_name",
             "beneficiary_account",
             "beneficiary_ifsc",

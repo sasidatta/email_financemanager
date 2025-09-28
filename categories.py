@@ -3,7 +3,7 @@ Mapping of transaction keywords and sender emails to categories for automatic em
 """
 
 category_map = {
-    "food": ["swiggy", "zomato", "restaurant"],
+    "food": ["zomato", "restaurant","Your Swiggy order was delivered"],
     "fuel": ["indian oil", "hpcl", "fuel", "petrol", "diesel"],
     "shopping": ["amazon", "flipkart", "myntra"],
     "utilities": ["electricity", "water", "utility bill", "mobile recharge", "amazon pay", "broadband", "act fibernet", "act", "jio", "jio mobile", "internet bill", "broadband bill"],
@@ -18,13 +18,13 @@ category_map = {
     "promotions": ["emi", "gift", "add-on", "promotion", "deal", "invite", "offer"],
     "login": ["oauth application", "login notification", "login alert", "otp", "one time password"],
     "upi": ["upi txn", "you have done a upi txn", "upi payment", "bhim upi", "gpay", "phonepe"],
-    "otp": ["transaction otp", "otp for transaction"]
+    "otp": ["transaction otp", "otp for transaction"],
+    "transactions": ["IMPS Transaction - Success","bank","loan","credit","debit","finance","investment","credited","debited"]
+
 }
 
 email_map = {
-    "hdfc": ["alerts@hdfcbank.net"],
-    "icici": ["credit_cards@icicibank.com"],
-    "rbl": ["RBLAlerts@rblbank.com"],
+    "banks": ["alerts@hdfcbank.net","credit_cards@icicibank.com","RBLAlerts@rblbank.com","bankalerts@kotak.com"],
     "amazon": ["no-reply@amazonpay.in"],
     "dmat": [
         "donotreply.evoting@cdslindia.co.in",
