@@ -24,7 +24,7 @@ category_map = {
 }
 
 email_map = {
-    "banks": ["alerts@hdfcbank.net","credit_cards@icicibank.com","RBLAlerts@rblbank.com","bankalerts@kotak.com"],
+    "banks": ["alerts@hdfcbank.net","credit_cards@icicibank.com","RBLAlerts@rblbank.com","bankalerts@kotak.com","onlinesbicard@sbicard.com","alerts@axisbank.com","nach.alerts@kotak.com"],
     "amazon": ["no-reply@amazonpay.in"],
     "dmat": [
         "donotreply.evoting@cdslindia.co.in",

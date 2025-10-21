@@ -18,7 +18,7 @@ bank_regex_patterns = {
             "merchant_name"
         ],
         "card": "SBI Credit Card",
-        "transactiontype": "Credit Card Debit"
+        "transactiontype": "Debit"
     },
     
     # SBI Credit Card Transaction (standard format)
@@ -54,9 +54,9 @@ bank_regex_patterns = {
     },
     # HDFC UPI Credit Card
     "HDFC_CC_UPI": {
-        "pattern": re.compile(
-            r"(?i)(Rs|₹|INR)\.?\s*([\d,]+\.\d{2})\s+has been debited from your HDFC Bank RuPay Credit Card\s+(XX\d{4})\s+to\s+([\w@.]+)\s+(.*?)\.\s*Your UPI transaction reference number is\s+(\d+)",
-            re.IGNORECASE | re.DOTALL
+    "pattern": re.compile(
+        r"(?i)(Rs|₹|INR)\.?\s*([\d,]+\.\d{2})\s+has been debited from your HDFC Bank RuPay Credit Card\s+XX(\d{4})\s+to\s+([\w@.]+)\s+(.*?)\.\s*Your UPI transaction reference number is\s+(\d+)",
+        re.IGNORECASE | re.DOTALL
         ),
         "fields": [
             "currency",
@@ -65,10 +65,11 @@ bank_regex_patterns = {
             "merchant_paymentid",
             "merchant_name",
             "transactionid"
-        ],
-        "card": "HDFC Bank RuPay Credit Card",
-        "transactiontype": "UPI Debit"
+    ],
+    "card": "HDFC Bank RuPay Credit Card",
+    "transactiontype": "UPI Debit"
     },
+    
     "HDFC Credit card": {
         "pattern": re.compile(
             r"(?i)Rs\.?\s*([\d,]+\.\d{2}).*?HDFC Bank RuPay Credit Card\s+(XX\d{4}).*?to\s+([\w@.]+)\s+(.*?)\s+UPI transaction reference number is\s+(\d+)",
@@ -87,7 +88,7 @@ bank_regex_patterns = {
     # ICICI Credit Card (matches date with or without time, flexible merchant info)
     "APAY ICICI Credit Card": {
         "pattern": re.compile(
-            r"ICICI Bank Credit Card\s+(XX\d{4}).*?transaction of\s+(INR|Rs\.?|₹)\s*([\d,]+\.\d{2}).*?Info:\s*([^.\n]+)",
+            r"ICICI Bank Credit Card\s+XX(\d{4}).*?transaction of\s+(INR|Rs\.?|₹)\s*([\d,]+\.\d{2}).*?Info:\s*([^.\n]+)",
             re.IGNORECASE | re.DOTALL
         ),
         "fields": [
@@ -131,6 +132,37 @@ bank_regex_patterns = {
             "remarks"
         ],
         "transactiontype": "IMPS Credit"
+    },
+    # Kotak NACH Credit
+    "KOTAK_NACH_CREDIT": {
+    "pattern": re.compile(
+        r"Your account\s+(?:XXXX+)?(\d{4})\s+has been credited with payment received via\s+(?:NACH|ECS).*?"
+        r"Remitter\s*:\s*(.*?)\s+Amount:\s*(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+Transaction date\s*:\s*(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "card_number",
+            "merchant_name",
+            "amount",
+            "date"
+        ],
+        "transactiontype": "NACH Credit"
+    },
+    # Kotak NACH/ECS Debit
+    "KOTAK_NACH_DEBIT": {
+        "pattern": re.compile(
+        r"Your account\s+(?:XXXX+)?(\d{4})\s+has been debited towards\s+(?:NACH|ECS).*?"
+        r"Beneficiary\s*:\s*(.*?)\s+UMRN Number\s*:\s*(.*?)\s+Amount:\s*(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+Transaction date\s*:\s*(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE | re.DOTALL
+        ),
+        "fields": [
+            "card_number",
+            "merchant_name",
+            "umrn_number",
+            "amount",
+            "date"
+        ],
+        "transactiontype": "NACH Debit"
     },
     # Axis Bank EMI Debit
     "AXIS_EMI_DEBIT": {
@@ -180,7 +212,7 @@ bank_regex_patterns = {
         "pattern": re.compile(
             r"Transaction Amount:\s*(INR|Rs|₹)\s*([\d,\.]+)\s*"
             r"Merchant Name:\s*([^\n]+)\s*"
-            r"Axis Bank Credit Card No\.\s*(XX\d+)\s*"
+            r"Axis Bank Credit Card No\.\s*XX(\d{4})\s*"
             r"Date & Time:\s*([^\n]+)\s*"
             r"Available Limit\*:\s*(INR|Rs|₹)\s*([\d,\.]+)\s*"
             r"Total Credit Limit\*:\s*(INR|Rs|₹)\s*([\d,\.]+)",

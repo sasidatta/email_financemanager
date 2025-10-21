@@ -18,17 +18,22 @@ import hashlib
 import sys, pdb 
 import db
 
-def process_transaction_email(subject, body, sender_email, email_date,cursor):
+def process_transaction_email(subject, body, sender_email, email_date_tms,cursor):
     """
     Process a transaction email and insert into the transactions table.
     Normalizes and assigns defaults to required fields.
     """
-    pdb.Pdb(stdout=sys.__stdout__).set_trace()
+    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
 
     txn_data = extract_transaction_data(body)
 
+    # ✅ make sure we have a dictionary
+    if not isinstance(txn_data, dict):
+       logger.warning("No transaction data extracted; skipping this email.")
+       return False
+
     # Assign defaults and normalize fields
-    required_keys = ["date","imap_server", "merchant_name", "transactiontype", "message_id"]
+    required_keys = ["imap_server", "merchant_name", "transactiontype", "message_id"]
     # Set default values if missing
     for key in required_keys:
         if key not in txn_data or txn_data[key] in [None, ""]:
@@ -46,12 +51,14 @@ def process_transaction_email(subject, body, sender_email, email_date,cursor):
                 unique_str = f"{subject}{email_timestamp}{merchant_name}"
                 txn_data[key] = hashlib.sha256(unique_str.encode('utf-8')).hexdigest()
 
-                
+    #pdb.Pdb(stdout=sys.__stdout__).set_trace()
     # Normalize transactiontype
     txn_data["transactiontype"] = normalize_transaction_type(txn_data.get("transactiontype"))
+
     # Ensure email_timestamp is set (default to now if missing)
-    if not txn_data.get("date"):
-        txn_data["email_timestamp"] = datetime.now(timezone.utc)
+    if not txn_data.get("email_timestamp"):
+        txn_data["email_timestamp"] = email_date_tms
+
     # Log warnings for missing fields before validation
     missing_fields = [k for k in required_keys if not txn_data.get(k)]
     if missing_fields:
@@ -197,16 +204,13 @@ def normalize_transaction_type(transaction_type_value):
     return "debit"
 
 def insert_transaction_to_db(txn_data, cursor):
-    #if not is_valid_transaction(txn_data):
-    #    logger.warning(f"Invalid transaction data skipped: {txn_data}")
-    #    return False
     try:
         #pdb.Pdb(stdout=sys.__stdout__).set_trace()
         # Use a savepoint so a single bad row doesn't abort the whole batch
         try:
             cursor.execute("SAVEPOINT sp_txn")
         except Exception:
-            pass
+            logger.warning(f"transaction data: {txn_data}")
         cursor.execute("""
             INSERT INTO transactions (amount, merchant_name, transactiontype, category, subject, imap_server, message_id, currency, email_timestamp, card_number)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -249,7 +253,7 @@ def insert_bill_to_db(bill_data, cursor):
             return False
     try:
         # Use a savepoint so a single bad row doesn't abort the whole batch
-        pdb.Pdb(stdout=sys.__stdout__).set_trace()
+        #pdb.Pdb(stdout=sys.__stdout__).set_trace()
         try:
             cursor.execute("SAVEPOINT sp_bill")
         except Exception:
@@ -357,7 +361,7 @@ def parse_fetch_params(request):
 
     # Set default fallback for email fetching filter
     if n_days is None and (start_date is None or end_date is None):
-        n_days = 3  # default to last 3 days
+        n_days = 30  # default to last 3 days
 
     # Keywords
     default_keywords = [
@@ -437,6 +441,7 @@ def process_email_chunk(chunk, cursor):
             logger.debug(f"Using parse_email_content from: {parse_email_content}")
             try:
                 subject, body, sender_email, email_date = parse_email_content(raw_bytes)
+                logger.warning(f"Parsed data {subject}, {sender_email}, {email_date}")
             except Exception as e:
                 raw_headers = msg.items()
                 logger.warning(f"Failed to parse email content: {e}. Raw headers: {raw_headers}, Raw bytes length: {len(raw_bytes)}")
@@ -550,39 +555,53 @@ def cleanup_emails():
     except Exception as e:
         logger.error(f"Error cleaning up emails: {e}", exc_info=True)
         return jsonify({"error": "Failed to clean up emails"}), 500
-
+    
 @app.route('/transactions', methods=['GET'])
 def transactions_page():
     class TransactionObj:
         def __init__(self, data):
             self.__dict__.update(data)
+
     try:
-        limit = request.args.get('limit', type=int)
-        if limit is None:
-            limit = 100
+        limit = request.args.get('limit', type=int) or 100
         offset = request.args.get('offset', type=int, default=0)
+
         # Detect JSON request
         accept = request.headers.get("Accept", "")
-        use_json = request.args.get("format", "").lower() == "json" or any("application/json" in part for part in accept.split(","))
+        use_json = request.args.get("format", "").lower() == "json" or any(
+            "application/json" in part for part in accept.split(",")
+        )
+
         with get_cursor() as (cursor, conn):
+            # Fetch distinct categories
             cursor.execute("SELECT DISTINCT category FROM transactions")
-            categories = [row['category'] for row in cursor.fetchall() if row['category'] is not None]
+            categories = [row['category'] for row in cursor.fetchall() if row['category']]
+
             category_filter = request.args.get('category', '')
-            base_query = "SELECT email_timestamp, amount, merchant_name, transactiontype, card_number, category FROM transactions"
+
+            # Base query with LEFT JOIN to accounts table based on account_number
+            base_query = """
+                SELECT t.email_timestamp, t.amount, t.merchant_name, t.transactiontype,
+                       t.card_number, t.category, a.account_name, a.account_type
+                FROM transactions t
+                LEFT JOIN accounts a ON t.card_number = a.account_number
+            """
             params = []
             if category_filter:
-                base_query += " WHERE category = %s"
+                base_query += " WHERE t.category = %s"
                 params.append(category_filter)
-            base_query += " ORDER BY email_timestamp DESC"
+
+            base_query += " ORDER BY t.email_timestamp DESC"
             if limit is not None:
                 base_query += " LIMIT %s"
                 params.append(limit)
             if offset:
                 base_query += " OFFSET %s"
                 params.append(offset)
+
             cursor.execute(base_query, tuple(params))
-            #pdb.Pdb(stdout=sys.__stdout__).set_trace()
             transactions = cursor.fetchall()
+
             # Ensure all fields have defaults if missing
             formatted_transactions = []
             for txn in transactions:
@@ -593,10 +612,12 @@ def transactions_page():
                     "transactiontype": txn.get('transactiontype', "debit"),
                     "card_number": txn.get('card_number') if txn.get('card_number') else "-",
                     "category": txn.get('category', "unknown"),
+                    "account_name": txn.get('account_name') or "-",
+                    "account_type": txn.get('account_type') or "-",
                 }
                 formatted_transactions.append(TransactionObj(txn_data))
+
             if use_json:
-                # For JSON, serialize as dicts
                 return jsonify([
                     {
                         "date": txn.email_timestamp.strftime("%m-%d-%Y %H:%M:%S") if txn.email_timestamp else "",
@@ -604,16 +625,24 @@ def transactions_page():
                         "merchant_name": txn.merchant_name,
                         "transactiontype": txn.transactiontype,
                         "card_number": txn.card_number,
-                        "category": txn.category
+                        "category": txn.category,
+                        "account_name": txn.account_name,
+                        "account_type": txn.account_type,
                     }
                     for txn in formatted_transactions
                 ])
             else:
-                return render_template("transactions.html", transactions=formatted_transactions, categories=categories, applied_filter=(category_filter or 'all'))
+                return render_template(
+                    "transactions.html",
+                    transactions=formatted_transactions,
+                    categories=categories,
+                    applied_filter=(category_filter or 'all')
+                )
+
     except Exception as e:
         logger.error(f"Error fetching transactions: {e}", exc_info=True)
         return jsonify({"error": "Failed to fetch transactions"}), 500
-
+    
 @app.route('/bills', methods=['GET'])
 def bills_page():
     class BillObj:
