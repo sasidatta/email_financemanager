@@ -1,10 +1,21 @@
 import yaml
 import os
 
+# Custom exception for config errors
+class ConfigError(Exception):
+    pass
+
 class Config:
     def __init__(self, config_path="config.yaml"):
+        if not os.path.exists(config_path):
+            raise ConfigError(f"Config file not found: {config_path}")
         with open(config_path, 'r') as f:
-            self._config = yaml.safe_load(f)
+            try:
+                self._config = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                raise ConfigError(f"Error parsing config file: {e}")
+        if self._config is None:
+            self._config = {}
 
     @property
     def email(self):

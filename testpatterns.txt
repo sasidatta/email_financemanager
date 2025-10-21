@@ -1,0 +1,2 @@
+'Dear Customer,<br/> <br/>Your account XXXXXXXX4433 has been credited with payment received via NACH/ECS as per details below.<br/> <br/> <br/>Remitter : NACH-ECS-CR-VEDANTA LIMITED-37405928 <br/>Amount: Rs.640.00 <br/>Transaction date  : 09/09/2025 <br/>Thank you for banking with us.<br/>Regards,<br/>Kotak Mahindra Bank Ltd.<br/>\r\n\r\nThis message was sent by the System :09/09/2025 09:28\r\n'
+'NACH/ECS advice'

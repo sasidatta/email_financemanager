@@ -82,10 +82,13 @@
             <table class="min-w-full text-sm text-left">
                 <thead class="sticky top-0 z-10 bg-credGlass dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700">
                     <tr>
-                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Date</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Email Timestamp</th>
                         <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Amount</th>
                         <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Merchant</th>
                         <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Transaction Type</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Card Number</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Account Name</th>
+                        <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Account Type</th>
                         <th class="px-4 py-3 font-bold text-cred dark:text-credAccent">Category</th>
                     </tr>
                 </thead>
@@ -93,17 +96,24 @@
                     {% if transactions %}
                         {% for txn in transactions %}
                         <tr class="transition-colors duration-150 hover:bg-credAccent/10 dark:hover:bg-credAccent/20">
-                            <td class="px-4 py-3 whitespace-nowrap">{{ txn.date }}</td>
-                            <td class="px-4 py-3 font-semibold text-green-600 dark:text-green-400">₹{{ txn.amount }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{ txn.email_timestamp.strftime("%m-%d-%Y %H:%M:%S") if txn.email_timestamp else "" }}
+                            </td>
+                            <td class="px-4 py-3 font-semibold text-green-600 dark:text-green-400">₹{{ "%.2f"|format(txn.amount) }}</td>
                             <td class="px-4 py-3">{{ txn.merchant_name }}</td>
                             <td class="px-4 py-3">{{ txn.transactiontype }}</td>
+                            <td class="px-4 py-3">
+                                {{ txn.card_number if txn.card_number else '-' }}
+                            </td>
+                            <td class="px-4 py-3">{{ txn.account_name or '-' }}</td>
+                            <td class="px-4 py-3">{{ txn.account_type or '-' }}</td>
                             <td class="px-4 py-3">
                                 <span class="inline-block px-3 py-1 rounded-full bg-credAccent/20 text-credAccent font-semibold text-xs">{{ txn.category|capitalize }}</span>
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
-                        <tr><td colspan="5" class="text-center py-8 text-gray-400">No transactions found.</td></tr>
+                        <tr><td colspan="9" class="text-center py-8 text-gray-400">No transactions found.</td></tr>
                     {% endif %}
                 </tbody>
             </table>

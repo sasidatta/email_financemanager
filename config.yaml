@@ -1,14 +1,14 @@
 email:
-  address: "your_email@example.com"
-  password: "your_app_password"
-  imap_server: "imap.mail.yahoo.com"
+  address: ""  # Will be loaded from YAHOO_EMAIL env var
+  password: ""  # Will be loaded from YAHOO_APP_PASSWORD env var
+  imap_server: "imap.mail.yahoo.com"  # Will be loaded from IMAP_SERVER env var
 database:
-  host: "localhost"
-  port: 5432
-  dbname: "emaildb"
-  user: "bankuser"
-  password: "bankpass"
+  host: ""  # Will be loaded from POSTGRES_HOST env var
+  port: 5432  # Will be loaded from POSTGRES_PORT env var
+  dbname: ""  # Will be loaded from POSTGRES_DB env var
+  user: ""  # Will be loaded from POSTGRES_USER env var
+  password: ""  # Will be loaded from POSTGRES_PASSWORD env var
 app:
-  debug: true
+  debug: false  # Will be loaded from FLASK_DEBUG env var
   host: "0.0.0.0"
-  port: 5000 
+  port: 5050 

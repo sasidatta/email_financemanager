@@ -1,5 +1,5 @@
 import pytest
-from extract_mail_data import extract_transaction_data
+from data import extract_transaction_data
 
 ICICI_SAMPLE = '''ICICI Bank Online Dear Customer, Your ICICI Bank Credit Card XX1039 has been used for a transaction of INR 149.00 on May 09, 2025 at 06:05:07. Info: IND*Amazon. The Available Credit Limit on your card is INR 1,98,322.31 and Total Credit Limit is INR 4,50,000.00.'''
 

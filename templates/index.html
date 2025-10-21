@@ -67,6 +67,8 @@
     <button onclick="cleanupEmails()">Cleanup DB</button>
     <button onclick="location.href='/status'">View Sync Status</button>
     <button onclick="location.href='/transactions'">View Transactions</button>
+    <button onclick="location.href='/bills'">View Bills (ACT/Jio/Utilities)</button>
+    <a href="{{ url_for('accounts') }}" class="btn btn-outline-primary">Manage Accounts</a>
     <p id="result"></p>
     <div id="console" style="background:#f4f4f4; border:1px solid #ccc; padding:10px; margin-top:20px; height:200px; overflow-y:auto; font-family:monospace;">
         <strong>Console Output:</strong>

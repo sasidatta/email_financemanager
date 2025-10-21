@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tracked Bills - ACT Fibernet, Jio, Utilities</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <h2>Tracked Bills (ACT Fibernet, Jio Mobile, Utilities)</h2>
+    <a href="/">&larr; Back to Home</a>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Merchant</th>
+                <th>Type</th>
+                <th>Card/Account</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bill in bills %}
+            <tr>
+                <td>{{ bill.email_timestamp.strftime('%Y-%m-%d %H:%M') if bill.email_timestamp else '' }}</td>
+                <td>{{ bill.amount }}</td>
+                <td>{{ bill.merchant_name }}</td>
+                <td>{{ bill.transactiontype }}</td>
+                <td>{{ bill.card_number }}</td>
+                <td>{{ bill.category }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">No bills found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
